@@ -22,12 +22,28 @@ type Article struct {
 	CreatedAt   time.Time      `json:"created_at"`
 	IsRead      int64          `json:"is_read"`
 	IsStarred   int64          `json:"is_starred"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	IsReadLater int64          `json:"is_read_later"`
 }
 
 type ArticlesFt struct {
 	Title   string `json:"title"`
 	Content string `json:"content"`
 	Author  string `json:"author"`
+}
+
+type Board struct {
+	ID          int64          `json:"id"`
+	UserID      int64          `json:"user_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	CreatedAt   time.Time      `json:"created_at"`
+}
+
+type BoardArticle struct {
+	BoardID   int64     `json:"board_id"`
+	ArticleID int64     `json:"article_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Category struct {

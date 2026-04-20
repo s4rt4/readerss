@@ -12,6 +12,7 @@ templ AppPage(title string) {
 				<nav class="page-nav" aria-label="Application">
 					<a href="/">Reader</a>
 					<a href="/feeds/manage">Feeds</a>
+					<a href="/boards">Boards</a>
 					<a href="/search">Search</a>
 					<a href="/feed-health">Health</a>
 					<a href="/settings">Settings</a>
@@ -70,6 +71,120 @@ templ Login(data LoginData) {
 				</div>
 			</section>
 		</main>
+	}
+}
+
+templ Boards(data BoardsData) {
+	@AppPage("Boards") {
+		@PageHeader("Boards", "Save articles into collections", "Create topic boards and keep related reading material together.")
+		<section class="management-grid">
+			<form class="panel stacked-form" action="/boards" method="post">
+				<div class="panel-heading">
+					<div>
+						<h2>Create Board</h2>
+						<p>Use boards for topics, projects, research queues, or ideas.</p>
+					</div>
+					@IconKanban()
+				</div>
+				if data.Notice != "" {
+					<div class="state-line ok">
+						@IconCheckCircle()
+						<span>{ data.Notice }</span>
+					</div>
+				}
+				if data.Error != "" {
+					<div class="state-line error">
+						@IconWarning()
+						<span>{ data.Error }</span>
+					</div>
+				}
+				<label>
+					<span>Name</span>
+					<input type="text" name="name" placeholder="AI research"/>
+				</label>
+				<label>
+					<span>Description</span>
+					<textarea name="description" rows="4" placeholder="Articles worth revisiting later"></textarea>
+				</label>
+				<button class="primary-button" type="submit">Create board</button>
+			</form>
+			<div class="panel">
+				<div class="panel-heading">
+					<div>
+						<h2>Your Boards</h2>
+						<p>Collections stored locally in SQLite.</p>
+					</div>
+					@IconBookmark()
+				</div>
+				<div class="table-list">
+					if len(data.Boards) == 0 {
+						<div class="empty-panel">
+							@IconKanban()
+							<strong>No boards yet</strong>
+							<p>Create a board, then save articles from the reader list.</p>
+						</div>
+					} else {
+						for _, board := range data.Boards {
+							@BoardRow(board)
+						}
+					}
+				</div>
+			</div>
+		</section>
+	}
+}
+
+templ BoardRow(board BoardView) {
+	<div class="table-row">
+		<span class="favicon feed-initials">@IconKanban()</span>
+		<div class="table-main">
+			<strong><a href={ boardLink(board) }>{ board.Name }</a></strong>
+			if board.Description != "" {
+				<small>{ board.Description }</small>
+			} else {
+				<small>{ board.CreatedAt }</small>
+			}
+		</div>
+		<span class="pill">{ fmt.Sprint(board.Count) } articles</span>
+		<div class="row-tools">
+			<a class="icon-button" href={ boardLink(board) } aria-label="Open board" title="Open board">@IconExternal()</a>
+			<form action={ boardDeleteAction(board) } method="post">
+				<button class="icon-button danger" type="submit" aria-label="Delete board" title="Delete board">@IconTrash()</button>
+			</form>
+		</div>
+	</div>
+}
+
+templ BoardDetail(data BoardDetailData) {
+	@AppPage(data.Board.Name) {
+		@PageHeader("Board", data.Board.Name, data.Board.Description)
+		<section class="panel">
+			<div class="panel-heading">
+				<div>
+					<h2>Saved Articles</h2>
+					<p>{ fmt.Sprint(len(data.Articles)) } articles in this board.</p>
+				</div>
+				<a class="secondary-button" href="/boards">@IconArrowLeft()<span>Boards</span></a>
+			</div>
+			<div class="article-list board-article-list">
+				if len(data.Articles) == 0 {
+					<div class="empty-panel">
+						@IconBookmark()
+						<strong>No saved articles</strong>
+						<p>Use Add to board from the reader to fill this collection.</p>
+					</div>
+				} else {
+					for _, article := range data.Articles {
+						<div class="board-article-card">
+							@ArticleRow(article, data.Boards, false)
+							<form action={ boardRemoveArticleAction(data.Board, article) } method="post">
+								<button class="text-button danger" type="submit">@IconTrash()<span>Remove from board</span></button>
+							</form>
+						</div>
+					}
+				}
+			</div>
+		</section>
 	}
 }
 

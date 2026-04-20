@@ -25,6 +25,20 @@ func (q *Queries) CountAllArticles(ctx context.Context, userID int64) (int64, er
 	return count, err
 }
 
+const countReadLaterArticles = `-- name: CountReadLaterArticles :one
+SELECT COUNT(*)
+FROM articles a
+JOIN feeds f ON f.id = a.feed_id
+WHERE f.user_id = ? AND a.is_read_later = 1
+`
+
+func (q *Queries) CountReadLaterArticles(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countReadLaterArticles, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countStarredArticles = `-- name: CountStarredArticles :one
 SELECT COUNT(*)
 FROM articles a
@@ -127,12 +141,12 @@ func (q *Queries) CountUnreadArticlesByFeed(ctx context.Context, userID int64) (
 
 const createArticle = `-- name: CreateArticle :one
 INSERT OR IGNORE INTO articles (
-    feed_id, guid, url, title, author, content, excerpt, published_at
+    feed_id, guid, url, title, author, content, excerpt, image_url, published_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, feed_id, guid, url, title, author, content, excerpt, published_at,
-          created_at, is_read, is_starred
+RETURNING id, feed_id, guid, url, title, author, content, excerpt, image_url, published_at,
+          created_at, is_read, is_starred, is_read_later
 `
 
 type CreateArticleParams struct {
@@ -143,10 +157,28 @@ type CreateArticleParams struct {
 	Author      sql.NullString `json:"author"`
 	Content     sql.NullString `json:"content"`
 	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullTime   `json:"published_at"`
 }
 
-func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (Article, error) {
+type CreateArticleRow struct {
+	ID          int64          `json:"id"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+	Url         string         `json:"url"`
+	Title       string         `json:"title"`
+	Author      sql.NullString `json:"author"`
+	Content     sql.NullString `json:"content"`
+	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullTime   `json:"published_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	IsRead      int64          `json:"is_read"`
+	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
+}
+
+func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error) {
 	row := q.db.QueryRowContext(ctx, createArticle,
 		arg.FeedID,
 		arg.Guid,
@@ -155,9 +187,10 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (A
 		arg.Author,
 		arg.Content,
 		arg.Excerpt,
+		arg.ImageUrl,
 		arg.PublishedAt,
 	)
-	var i Article
+	var i CreateArticleRow
 	err := row.Scan(
 		&i.ID,
 		&i.FeedID,
@@ -167,10 +200,12 @@ func (q *Queries) CreateArticle(ctx context.Context, arg CreateArticleParams) (A
 		&i.Author,
 		&i.Content,
 		&i.Excerpt,
+		&i.ImageUrl,
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.IsRead,
 		&i.IsStarred,
+		&i.IsReadLater,
 	)
 	return i, err
 }
@@ -209,8 +244,8 @@ func (q *Queries) DeleteReadArticlesOlderThan(ctx context.Context, arg DeleteRea
 }
 
 const listArticlesByFeed = `-- name: ListArticlesByFeed :many
-SELECT id, feed_id, guid, url, title, author, content, excerpt, published_at,
-       created_at, is_read, is_starred
+SELECT id, feed_id, guid, url, title, author, content, excerpt, image_url, published_at,
+       created_at, is_read, is_starred, is_read_later
 FROM articles
 WHERE feed_id = ?
 ORDER BY published_at DESC, id DESC
@@ -223,15 +258,32 @@ type ListArticlesByFeedParams struct {
 	Offset int64 `json:"offset"`
 }
 
-func (q *Queries) ListArticlesByFeed(ctx context.Context, arg ListArticlesByFeedParams) ([]Article, error) {
+type ListArticlesByFeedRow struct {
+	ID          int64          `json:"id"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+	Url         string         `json:"url"`
+	Title       string         `json:"title"`
+	Author      sql.NullString `json:"author"`
+	Content     sql.NullString `json:"content"`
+	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullTime   `json:"published_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	IsRead      int64          `json:"is_read"`
+	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
+}
+
+func (q *Queries) ListArticlesByFeed(ctx context.Context, arg ListArticlesByFeedParams) ([]ListArticlesByFeedRow, error) {
 	rows, err := q.db.QueryContext(ctx, listArticlesByFeed, arg.FeedID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Article
+	var items []ListArticlesByFeedRow
 	for rows.Next() {
-		var i Article
+		var i ListArticlesByFeedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.FeedID,
@@ -241,10 +293,103 @@ func (q *Queries) ListArticlesByFeed(ctx context.Context, arg ListArticlesByFeed
 			&i.Author,
 			&i.Content,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.IsReadLater,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReadLaterArticles = `-- name: ListReadLaterArticles :many
+SELECT
+    a.id,
+    a.feed_id,
+    a.guid,
+    a.url,
+    a.title,
+    a.author,
+    a.content,
+    a.excerpt,
+    a.image_url,
+    a.published_at,
+    a.created_at,
+    a.is_read,
+    a.is_starred,
+    a.is_read_later,
+    f.title AS feed_title,
+    COALESCE(c.name, 'Uncategorized') AS category
+FROM articles a
+JOIN feeds f ON f.id = a.feed_id
+LEFT JOIN categories c ON c.id = f.category_id
+WHERE f.user_id = ? AND a.is_read_later = 1
+ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
+LIMIT ? OFFSET ?
+`
+
+type ListReadLaterArticlesParams struct {
+	UserID int64 `json:"user_id"`
+	Limit  int64 `json:"limit"`
+	Offset int64 `json:"offset"`
+}
+
+type ListReadLaterArticlesRow struct {
+	ID          int64          `json:"id"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+	Url         string         `json:"url"`
+	Title       string         `json:"title"`
+	Author      sql.NullString `json:"author"`
+	Content     sql.NullString `json:"content"`
+	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullTime   `json:"published_at"`
+	CreatedAt   time.Time      `json:"created_at"`
+	IsRead      int64          `json:"is_read"`
+	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
+	FeedTitle   string         `json:"feed_title"`
+	Category    string         `json:"category"`
+}
+
+func (q *Queries) ListReadLaterArticles(ctx context.Context, arg ListReadLaterArticlesParams) ([]ListReadLaterArticlesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReadLaterArticles, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReadLaterArticlesRow
+	for rows.Next() {
+		var i ListReadLaterArticlesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Url,
+			&i.Title,
+			&i.Author,
+			&i.Content,
+			&i.Excerpt,
+			&i.ImageUrl,
+			&i.PublishedAt,
+			&i.CreatedAt,
+			&i.IsRead,
+			&i.IsStarred,
+			&i.IsReadLater,
+			&i.FeedTitle,
+			&i.Category,
 		); err != nil {
 			return nil, err
 		}
@@ -269,10 +414,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -298,10 +445,12 @@ type ListRecentArticlesRow struct {
 	Author      sql.NullString `json:"author"`
 	Content     sql.NullString `json:"content"`
 	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullTime   `json:"published_at"`
 	CreatedAt   time.Time      `json:"created_at"`
 	IsRead      int64          `json:"is_read"`
 	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
 	FeedTitle   string         `json:"feed_title"`
 	Category    string         `json:"category"`
 }
@@ -324,10 +473,12 @@ func (q *Queries) ListRecentArticles(ctx context.Context, arg ListRecentArticles
 			&i.Author,
 			&i.Content,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.IsReadLater,
 			&i.FeedTitle,
 			&i.Category,
 		); err != nil {
@@ -354,10 +505,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -384,10 +537,12 @@ type ListRecentArticlesByCategoryRow struct {
 	Author      sql.NullString `json:"author"`
 	Content     sql.NullString `json:"content"`
 	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullTime   `json:"published_at"`
 	CreatedAt   time.Time      `json:"created_at"`
 	IsRead      int64          `json:"is_read"`
 	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
 	FeedTitle   string         `json:"feed_title"`
 	Category    string         `json:"category"`
 }
@@ -415,10 +570,12 @@ func (q *Queries) ListRecentArticlesByCategory(ctx context.Context, arg ListRece
 			&i.Author,
 			&i.Content,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.IsReadLater,
 			&i.FeedTitle,
 			&i.Category,
 		); err != nil {
@@ -445,10 +602,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -475,10 +634,12 @@ type ListRecentArticlesByFeedRow struct {
 	Author      sql.NullString `json:"author"`
 	Content     sql.NullString `json:"content"`
 	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullTime   `json:"published_at"`
 	CreatedAt   time.Time      `json:"created_at"`
 	IsRead      int64          `json:"is_read"`
 	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
 	FeedTitle   string         `json:"feed_title"`
 	Category    string         `json:"category"`
 }
@@ -506,10 +667,12 @@ func (q *Queries) ListRecentArticlesByFeed(ctx context.Context, arg ListRecentAr
 			&i.Author,
 			&i.Content,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.IsReadLater,
 			&i.FeedTitle,
 			&i.Category,
 		); err != nil {
@@ -536,10 +699,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -565,10 +730,12 @@ type ListStarredArticlesRow struct {
 	Author      sql.NullString `json:"author"`
 	Content     sql.NullString `json:"content"`
 	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullTime   `json:"published_at"`
 	CreatedAt   time.Time      `json:"created_at"`
 	IsRead      int64          `json:"is_read"`
 	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
 	FeedTitle   string         `json:"feed_title"`
 	Category    string         `json:"category"`
 }
@@ -591,10 +758,12 @@ func (q *Queries) ListStarredArticles(ctx context.Context, arg ListStarredArticl
 			&i.Author,
 			&i.Content,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.IsReadLater,
 			&i.FeedTitle,
 			&i.Category,
 		); err != nil {
@@ -621,10 +790,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -650,10 +821,12 @@ type ListUnreadArticlesRow struct {
 	Author      sql.NullString `json:"author"`
 	Content     sql.NullString `json:"content"`
 	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullTime   `json:"published_at"`
 	CreatedAt   time.Time      `json:"created_at"`
 	IsRead      int64          `json:"is_read"`
 	IsStarred   int64          `json:"is_starred"`
+	IsReadLater int64          `json:"is_read_later"`
 	FeedTitle   string         `json:"feed_title"`
 	Category    string         `json:"category"`
 }
@@ -676,10 +849,12 @@ func (q *Queries) ListUnreadArticles(ctx context.Context, arg ListUnreadArticles
 			&i.Author,
 			&i.Content,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.IsRead,
 			&i.IsStarred,
+			&i.IsReadLater,
 			&i.FeedTitle,
 			&i.Category,
 		); err != nil {
@@ -767,6 +942,7 @@ SELECT
     a.url,
     a.title,
     a.excerpt,
+    a.image_url,
     a.published_at,
     f.title AS feed_title,
     snippet(fts, 0, '<mark>', '</mark>', '...', 12) AS title_snippet,
@@ -791,6 +967,7 @@ type SearchArticlesRow struct {
 	Url            string         `json:"url"`
 	Title          string         `json:"title"`
 	Excerpt        sql.NullString `json:"excerpt"`
+	ImageUrl       sql.NullString `json:"image_url"`
 	PublishedAt    sql.NullTime   `json:"published_at"`
 	FeedTitle      string         `json:"feed_title"`
 	TitleSnippet   string         `json:"title_snippet"`
@@ -812,6 +989,7 @@ func (q *Queries) SearchArticles(ctx context.Context, arg SearchArticlesParams) 
 			&i.Url,
 			&i.Title,
 			&i.Excerpt,
+			&i.ImageUrl,
 			&i.PublishedAt,
 			&i.FeedTitle,
 			&i.TitleSnippet,
@@ -828,6 +1006,24 @@ func (q *Queries) SearchArticles(ctx context.Context, arg SearchArticlesParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const setArticleReadLater = `-- name: SetArticleReadLater :exec
+UPDATE articles
+SET is_read_later = ?
+WHERE articles.id = ?
+  AND articles.feed_id IN (SELECT feeds.id FROM feeds WHERE feeds.user_id = ?)
+`
+
+type SetArticleReadLaterParams struct {
+	IsReadLater int64 `json:"is_read_later"`
+	ID          int64 `json:"id"`
+	UserID      int64 `json:"user_id"`
+}
+
+func (q *Queries) SetArticleReadLater(ctx context.Context, arg SetArticleReadLaterParams) error {
+	_, err := q.db.ExecContext(ctx, setArticleReadLater, arg.IsReadLater, arg.ID, arg.UserID)
+	return err
 }
 
 const starArticle = `-- name: StarArticle :exec

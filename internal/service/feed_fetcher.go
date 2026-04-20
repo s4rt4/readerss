@@ -41,6 +41,8 @@ var (
 	spaceRE       = regexp.MustCompile(`[ \t\r\f\v]+`)
 	newlineRE     = regexp.MustCompile(`\n{3,}`)
 	feedLinkRE    = regexp.MustCompile(`(?is)<link[^>]+(?:type=["']application/(?:rss|atom)\+xml["'][^>]+href=["']([^"']+)["']|href=["']([^"']+)["'][^>]+type=["']application/(?:rss|atom)\+xml["'])`)
+	imgSrcRE      = regexp.MustCompile(`(?is)<img[^>]+src=["']([^"']+)["']`)
+	ogImageRE     = regexp.MustCompile(`(?is)<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']|<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']`)
 )
 
 func NewFeedFetcher(queries *sqlc.Queries) *FeedFetcher {
@@ -173,10 +175,14 @@ func (f *FeedFetcher) FetchFeed(ctx context.Context, userID, feedID int64) (Fetc
 			result.Skipped++
 			continue
 		}
-		if len([]rune(article.Content.String)) < 220 {
-			if full := f.fetchReadableArticle(ctx, article.Url); full != "" {
+		if len([]rune(article.Content.String)) < 220 || !article.ImageUrl.Valid {
+			full, imageURL := f.fetchArticleExtras(ctx, article.Url)
+			if full != "" && len([]rune(article.Content.String)) < 220 {
 				article.Content = nullString(full)
 				article.Excerpt = nullString(trimForDB(oneLine(full), 280))
+			}
+			if !article.ImageUrl.Valid && imageURL != "" {
+				article.ImageUrl = nullString(imageURL)
 			}
 		}
 		created, err := f.queries.CreateArticle(ctx, article)
@@ -187,7 +193,7 @@ func (f *FeedFetcher) FetchFeed(ctx context.Context, userID, feedID int64) (Fetc
 			}
 			return result, fmt.Errorf("save article %q: %w", article.Title, err)
 		}
-		if err := f.applyFilterRules(ctx, userID, created); err != nil {
+		if err := f.applyFilterRules(ctx, userID, created.ID, created.FeedID, created.Url, created.Title, created.Content); err != nil {
 			return result, err
 		}
 		result.Inserted++
@@ -197,37 +203,38 @@ func (f *FeedFetcher) FetchFeed(ctx context.Context, userID, feedID int64) (Fetc
 	return result, nil
 }
 
-func (f *FeedFetcher) fetchReadableArticle(ctx context.Context, articleURL string) string {
+func (f *FeedFetcher) fetchArticleExtras(ctx context.Context, articleURL string) (string, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, articleURL, nil)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	req.Header.Set("User-Agent", "ReadeRSS/0.1")
 	resp, err := f.client.Do(req)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return ""
+		return "", ""
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return ReadableText(string(body))
+	htmlValue := string(body)
+	return ReadableText(htmlValue), absoluteURL(articleURL, firstNonEmpty(extractMetaImage(htmlValue), extractFirstImage(htmlValue)))
 }
 
-func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID int64, article sqlc.Article) error {
+func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, feedID int64, articleURL, titleValue string, contentValue sql.NullString) error {
 	rules, err := f.queries.ListFilterRules(ctx, userID)
 	if err != nil {
 		return err
 	}
-	title := strings.ToLower(article.Title)
-	urlValue := strings.ToLower(article.Url)
-	content := strings.ToLower(article.Content.String)
+	title := strings.ToLower(titleValue)
+	urlValue := strings.ToLower(articleURL)
+	content := strings.ToLower(contentValue.String)
 	for _, rule := range rules {
-		if rule.FeedID.Valid && rule.FeedID.Int64 != article.FeedID {
+		if rule.FeedID.Valid && rule.FeedID.Int64 != feedID {
 			continue
 		}
 		pattern := strings.ToLower(strings.TrimSpace(rule.Pattern))
@@ -245,16 +252,16 @@ func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID int64, articl
 		}
 		switch rule.Action {
 		case "star":
-			if err := f.queries.StarArticle(ctx, sqlc.StarArticleParams{IsStarred: 1, ID: article.ID, UserID: userID}); err != nil {
+			if err := f.queries.StarArticle(ctx, sqlc.StarArticleParams{IsStarred: 1, ID: articleID, UserID: userID}); err != nil {
 				return err
 			}
 		case "delete":
-			if err := f.queries.DeleteArticle(ctx, sqlc.DeleteArticleParams{ID: article.ID, UserID: userID}); err != nil {
+			if err := f.queries.DeleteArticle(ctx, sqlc.DeleteArticleParams{ID: articleID, UserID: userID}); err != nil {
 				return err
 			}
 			return nil
 		default:
-			if err := f.queries.MarkArticleRead(ctx, sqlc.MarkArticleReadParams{IsRead: 1, ID: article.ID, UserID: userID}); err != nil {
+			if err := f.queries.MarkArticleRead(ctx, sqlc.MarkArticleReadParams{IsRead: 1, ID: articleID, UserID: userID}); err != nil {
 				return err
 			}
 		}
@@ -287,6 +294,7 @@ func articleFromItem(feedID int64, item *gofeed.Item) (sqlc.CreateArticleParams,
 	rawContent := firstNonEmpty(item.Content, item.Description)
 	content := ReadableText(rawContent)
 	excerpt := trimForDB(oneLine(content), 280)
+	imageURL := itemImageURL(item, rawContent, link)
 
 	var published sql.NullTime
 	if item.PublishedParsed != nil {
@@ -303,8 +311,73 @@ func articleFromItem(feedID int64, item *gofeed.Item) (sqlc.CreateArticleParams,
 		Author:      nullString(authorName(item)),
 		Content:     nullString(content),
 		Excerpt:     nullString(excerpt),
+		ImageUrl:    nullString(imageURL),
 		PublishedAt: published,
 	}, true
+}
+
+func itemImageURL(item *gofeed.Item, rawContent, baseURL string) string {
+	if item.Image != nil && item.Image.URL != "" {
+		return absoluteURL(baseURL, item.Image.URL)
+	}
+	for _, enclosure := range item.Enclosures {
+		if strings.HasPrefix(strings.ToLower(enclosure.Type), "image/") && enclosure.URL != "" {
+			return absoluteURL(baseURL, enclosure.URL)
+		}
+	}
+	if media := item.Extensions["media"]; media != nil {
+		for _, name := range []string{"thumbnail", "content"} {
+			for _, ext := range media[name] {
+				if ext.Attrs != nil {
+					if value := ext.Attrs["url"]; value != "" {
+						return absoluteURL(baseURL, value)
+					}
+				}
+			}
+		}
+	}
+	return absoluteURL(baseURL, extractFirstImage(rawContent))
+}
+
+func extractFirstImage(value string) string {
+	match := imgSrcRE.FindStringSubmatch(value)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(html.UnescapeString(match[1]))
+}
+
+func extractMetaImage(value string) string {
+	match := ogImageRE.FindStringSubmatch(value)
+	if len(match) == 0 {
+		return ""
+	}
+	for _, candidate := range match[1:] {
+		candidate = strings.TrimSpace(html.UnescapeString(candidate))
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func absoluteURL(baseURL, candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return ""
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return ""
+	}
+	if parsed.IsAbs() {
+		return parsed.String()
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return candidate
+	}
+	return base.ResolveReference(parsed).String()
 }
 
 func authorName(item *gofeed.Item) string {

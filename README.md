@@ -8,8 +8,10 @@ ReadeRSS is a self-hosted RSS reader built with Go, templ, SQLite, and a small a
 - Feed management: add, edit, delete, refresh, and mark a feed as read.
 - RSS/Atom parsing with homepage feed discovery.
 - SQLite storage with migrations powered by Goose and typed queries from sqlc.
-- Article reader with unread/all/starred filters, detail pane, mobile flow, and readable text cleanup.
-- Article actions: mark read/unread, star/unstar, and mark all read.
+- Article reader with unread/all/starred/read-later filters, detail pane, mobile flow, change-view modes, thumbnails, and readable text cleanup.
+- Article actions: mark read/unread, star/unstar, read later, add to board, and mark all read.
+- Feedly-style view modes: Magazine, Cards, Article View, and Title-Only.
+- Boards for saving articles into topic collections.
 - Category and feed unread counts in the sidebar.
 - Background scheduler with worker pool for due feed refreshes.
 - HTTP caching support for feeds with ETag and Last-Modified.
@@ -117,6 +119,22 @@ go test ./...
 go build -o bin\readress.exe ./cmd/server
 ```
 
+## Reader Shortcuts
+
+```text
+j / k     Move through articles
+o         Open the selected article detail
+s         Star or unstar the selected article
+m         Toggle read state
+l         Toggle read later
+r         Refresh feeds
+/         Focus search
+a         Open feed management
+g h       Open feed health
+g s       Open settings
+?         Open shortcut help
+```
+
 ## Roadmap
 
 Remaining polish before a comfortable v1:
@@ -124,6 +142,9 @@ Remaining polish before a comfortable v1:
 - Replace the minimal local HTMX helper with the full vendored HTMX build.
 - Add Dockerfile and docker-compose for self-host deployment.
 - Add integration tests with in-memory SQLite and fixture feeds.
-- Add richer article extraction and feed favicon caching.
+- Add image proxy/cache and feed favicon caching.
+- Preserve richer article formatting such as inline images, lists, quotes, and code blocks.
 - Improve filter rules with regex support and a dedicated management page.
+- Persist view preferences to backend settings.
+- Add board search/create-inline inside the Add to board popover.
 - Add README screenshots and production hardening notes.

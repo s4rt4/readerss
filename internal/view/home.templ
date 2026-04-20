@@ -38,6 +38,11 @@ templ Home(data HomeData) {
 						<span>Search</span>
 						<strong>{ data.All }</strong>
 					</a>
+					<a class="nav-item" href="/boards">
+						<span class="nav-icon">@IconKanban()</span>
+						<span>Boards</span>
+						<strong>{ len(data.Boards) }</strong>
+					</a>
 					<a class="nav-item" href="/feed-health">
 						<span class="nav-icon">@IconPulse()</span>
 						<span>Feed health</span>
@@ -64,6 +69,11 @@ templ Home(data HomeData) {
 						<span class="nav-icon">@IconStar()</span>
 						<span>Starred</span>
 						<strong>{ data.Starred }</strong>
+					</a>
+					<a class={ "nav-item " + navState(data.Filter, "read-later") } href="/?filter=read-later">
+						<span class="nav-icon">@IconBookmark()</span>
+						<span>Read later</span>
+						<strong>{ data.ReadLater }</strong>
 					</a>
 				</nav>
 				<div class="nav-section">
@@ -130,6 +140,34 @@ templ Home(data HomeData) {
 							<a class={ templ.KV("selected", filterSelected(data.Filter, "unread")) } href="/?filter=unread">Unread</a>
 							<a class={ templ.KV("selected", filterSelected(data.Filter, "all")) } href="/?filter=all">All</a>
 							<a class={ templ.KV("selected", filterSelected(data.Filter, "starred")) } href="/?filter=starred">Starred</a>
+							<a class={ templ.KV("selected", filterSelected(data.Filter, "read-later")) } href="/?filter=read-later">Later</a>
+						</div>
+						<div class="view-menu" data-view-menu>
+							<button class="icon-button" type="button" data-view-menu-trigger aria-label="Change view" title="Change view" aria-haspopup="true" aria-expanded="false">
+								@IconLayoutList()
+							</button>
+							<div class="view-popover" data-view-popover hidden>
+								<div class="view-popover-header">
+									@IconArrowLeft()
+									<span>Change View</span>
+								</div>
+								<button class="view-option selected" type="button" data-view-option="magazine">
+									@IconListFilter()
+									<span>Magazine</span>
+								</button>
+								<button class="view-option" type="button" data-view-option="cards">
+									@IconPanelsTopLeft()
+									<span>Cards</span>
+								</button>
+								<button class="view-option" type="button" data-view-option="article">
+									@IconRows3()
+									<span>Article View</span>
+								</button>
+								<button class="view-option" type="button" data-view-option="title">
+									@IconList()
+									<span>Title-Only</span>
+								</button>
+							</div>
 						</div>
 						<form action="/articles/mark-all-read" method="post">
 							<button class="icon-button" type="submit" aria-label="Mark all as read" title="Mark all as read">
@@ -194,7 +232,7 @@ templ Home(data HomeData) {
 								</div>
 							} else {
 								for i, article := range data.Articles {
-									@ArticleRow(article, i == 0)
+									@ArticleRow(article, data.Boards, i == 0)
 								}
 							}
 						</div>
@@ -228,6 +266,11 @@ templ Home(data HomeData) {
 											@IconCheckCircle()
 										</button>
 									</form>
+									<form action={ articleReadLaterAction(data.Articles[0]) } method="post">
+										<button class="icon-button" type="submit" aria-label="Toggle read later" title="Toggle read later">
+											@IconBookmark()
+										</button>
+									</form>
 								}
 								<a class="icon-button" href={ articleOriginalURL(data.Articles) } target="_blank" rel="noreferrer" aria-label="Open original" title="Open original">
 									@IconExternal()
@@ -240,6 +283,11 @@ templ Home(data HomeData) {
 								<h2 data-detail-title>No article selected</h2>
 								<p data-detail-summary>Add feeds and refresh them to start reading real articles.</p>
 							} else {
+								if data.Articles[0].ImageURL != "" {
+									<img class="article-hero-image" data-detail-image src={ data.Articles[0].ImageURL } alt=""/>
+								} else {
+									<img class="article-hero-image" data-detail-image src="" alt="" hidden/>
+								}
 								<p class="tag" data-detail-tag>{ data.Articles[0].Category }</p>
 								<h2 data-detail-title>{ data.Articles[0].Title }</h2>
 								<p data-detail-summary>{ data.Articles[0].Summary }</p>
@@ -271,6 +319,7 @@ templ Home(data HomeData) {
 					@Shortcut("k", "Previous article")
 					@Shortcut("o", "Open article")
 					@Shortcut("s", "Star article")
+					@Shortcut("l", "Read later")
 					@Shortcut("m", "Toggle read")
 					@Shortcut("/", "Search")
 					@Shortcut("r", "Refresh")
@@ -286,7 +335,7 @@ templ Home(data HomeData) {
 	}
 }
 
-templ ArticleRow(article ArticleView, active bool) {
+templ ArticleRow(article ArticleView, boards []BoardView, active bool) {
 	<article
 		class={ "article-row " + articleState(article, active) }
 		data-article-id={ fmt.Sprint(article.ID) }
@@ -297,9 +346,15 @@ templ ArticleRow(article ArticleView, active bool) {
 		data-content={ articleJSONParagraphs(article.Content, article.Summary) }
 		data-tag={ article.Category }
 		data-url={ article.URL }
+		data-image={ article.ImageURL }
 	>
 		<button class="article-select" type="button">
 			<span class="read-dot"></span>
+			if article.ImageURL != "" {
+				<img class="article-thumb" src={ article.ImageURL } alt=""/>
+			} else {
+				<span class="article-thumb article-thumb-fallback">{ initials(article.Source) }</span>
+			}
 			<span class="article-row-main">
 				<span class="article-row-top">
 					<strong>{ article.Title }</strong>
@@ -320,6 +375,23 @@ templ ArticleRow(article ArticleView, active bool) {
 			<form action={ articleReadAction(article) } method="post">
 				<button class="mini-icon" type="submit" data-read-action aria-label="Toggle read" title="Toggle read">@IconCheckCircle()</button>
 			</form>
+			<form action={ articleReadLaterAction(article) } method="post">
+				<button class="mini-icon" type="submit" data-read-later-action aria-label="Toggle read later" title="Toggle read later">@IconBookmark()</button>
+			</form>
+			if len(boards) > 0 {
+				<span class="board-save" data-board-save>
+					<button class="mini-icon" type="button" data-board-save-trigger aria-label="Add to board" title="Add to board" aria-haspopup="true" aria-expanded="false">@IconKanban()</button>
+					<form class="board-save-popover" action={ articleBoardAction(article) } method="post" data-board-save-popover hidden>
+						<strong>Add to board</strong>
+						<select name="board_id" aria-label="Board">
+							for _, board := range boards {
+								<option value={ fmt.Sprint(board.ID) }>{ board.Name }</option>
+							}
+						</select>
+						<button class="secondary-button" type="submit">@IconCheckCircle()<span>Save</span></button>
+					</form>
+				</span>
+			}
 		</span>
 	</article>
 }
@@ -406,4 +478,32 @@ templ IconUpload() {
 
 templ IconDownload() {
 	<svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"></path><path d="m7 10 5 5 5-5"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path></svg>
+}
+
+templ IconLayoutList() {
+	<svg class="lucide lucide-layout-list" viewBox="0 0 24 24" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect><path d="M14 4h7"></path><path d="M14 9h7"></path><path d="M14 15h7"></path><path d="M14 20h7"></path></svg>
+}
+
+templ IconListFilter() {
+	<svg class="lucide lucide-list-filter" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"></path><path d="M7 12h10"></path><path d="M10 18h4"></path></svg>
+}
+
+templ IconPanelsTopLeft() {
+	<svg class="lucide lucide-panels-top-left" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
+}
+
+templ IconRows3() {
+	<svg class="lucide lucide-rows-3" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="4" x="3" y="5" rx="1"></rect><rect width="18" height="4" x="3" y="15" rx="1"></rect></svg>
+}
+
+templ IconList() {
+	<svg class="lucide lucide-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+}
+
+templ IconBookmark() {
+	<svg class="lucide lucide-bookmark" viewBox="0 0 24 24" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg>
+}
+
+templ IconKanban() {
+	<svg class="lucide lucide-panels-top-left" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
 }

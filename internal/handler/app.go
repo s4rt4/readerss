@@ -87,7 +87,15 @@ func (a *App) Routes(r chi.Router) {
 		protected.Post("/articles/{id}/unread", a.markArticleUnread)
 		protected.Post("/articles/{id}/star", a.starArticle)
 		protected.Post("/articles/{id}/unstar", a.unstarArticle)
+		protected.Post("/articles/{id}/read-later", a.addReadLater)
+		protected.Post("/articles/{id}/read-later/remove", a.removeReadLater)
+		protected.Post("/articles/{id}/boards", a.addArticleToBoard)
 		protected.Post("/articles/mark-all-read", a.markAllArticlesRead)
+		protected.Get("/boards", a.boards)
+		protected.Post("/boards", a.createBoard)
+		protected.Get("/boards/{id}", a.boardDetail)
+		protected.Post("/boards/{id}/delete", a.deleteBoard)
+		protected.Post("/boards/{id}/articles/{articleID}/remove", a.removeArticleFromBoard)
 		protected.Get("/settings", a.settings)
 		protected.Post("/settings", a.updateSettings)
 		protected.Get("/settings/opml/export", a.exportOPML)
@@ -449,6 +457,85 @@ func (a *App) feedHealth(w http.ResponseWriter, r *http.Request) {
 	render(w, r, view.FeedHealth(data))
 }
 
+func (a *App) boards(w http.ResponseWriter, r *http.Request) {
+	data, err := a.boardsData(r, r.URL.Query().Get("notice"), r.URL.Query().Get("error"))
+	if err != nil {
+		a.serverError(w, "load boards", err)
+		return
+	}
+	render(w, r, view.Boards(data))
+}
+
+func (a *App) createBoard(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.redirectBoards(w, r, "", "Could not read board form.")
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("name"))
+	if name == "" {
+		a.redirectBoards(w, r, "", "Board name is required.")
+		return
+	}
+	_, err := a.queries.CreateBoard(r.Context(), sqlc.CreateBoardParams{
+		UserID:      a.userID,
+		Name:        name,
+		Description: nullString(r.PostForm.Get("description")),
+	})
+	if err != nil {
+		a.serverError(w, "create board", err)
+		return
+	}
+	a.redirectBoards(w, r, "Board saved.", "")
+}
+
+func (a *App) deleteBoard(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.DeleteBoard(r.Context(), sqlc.DeleteBoardParams{ID: id, UserID: a.userID}); err != nil {
+		a.serverError(w, "delete board", err)
+		return
+	}
+	a.redirectBoards(w, r, "Board deleted.", "")
+}
+
+func (a *App) boardDetail(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	board, err := a.queries.GetBoard(r.Context(), sqlc.GetBoardParams{ID: id, UserID: a.userID})
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rows, err := a.queries.ListBoardArticles(r.Context(), sqlc.ListBoardArticlesParams{ID: id, UserID: a.userID, Limit: 100, Offset: 0})
+	if err != nil {
+		a.serverError(w, "list board articles", err)
+		return
+	}
+	articles := make([]view.ArticleView, 0, len(rows))
+	for _, row := range rows {
+		articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
+	}
+	boards, err := a.loadBoards(r)
+	if err != nil {
+		a.serverError(w, "list boards", err)
+		return
+	}
+	render(w, r, view.BoardDetail(view.BoardDetailData{
+		Board: view.BoardView{
+			ID:          board.ID,
+			Name:        board.Name,
+			Description: board.Description.String,
+			CreatedAt:   articleTime(sql.NullTime{}, board.CreatedAt),
+		},
+		Articles: articles,
+		Boards:   boards,
+	}))
+}
+
 func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -513,19 +600,32 @@ func (a *App) homeData(r *http.Request) (view.HomeData, error) {
 	if err != nil {
 		return view.HomeData{}, err
 	}
+	boards, err := a.loadBoards(r)
+	if err != nil {
+		return view.HomeData{}, err
+	}
 	unread, err := a.queries.CountUnreadArticles(r.Context(), a.userID)
 	if err != nil {
 		return view.HomeData{}, err
 	}
 	all, _ := a.queries.CountAllArticles(r.Context(), a.userID)
 	starred, _ := a.queries.CountStarredArticles(r.Context(), a.userID)
+	readLater, _ := a.queries.CountReadLaterArticles(r.Context(), a.userID)
 	errors := 0
 	for _, feed := range feeds {
 		if feed.StatusTone == "error" {
 			errors++
 		}
 	}
-	return view.HomeData{Categories: categories, Feeds: feeds, Articles: articles, Unread: unread, All: all, Starred: starred, Errors: errors, Filter: filter}, nil
+	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter}, nil
+}
+
+func (a *App) boardsData(r *http.Request, notice, formError string) (view.BoardsData, error) {
+	boards, err := a.loadBoards(r)
+	if err != nil {
+		return view.BoardsData{}, err
+	}
+	return view.BoardsData{Boards: boards, Notice: notice, Error: formError}, nil
 }
 
 func (a *App) feedManagementData(r *http.Request, form view.FeedFormData, formError, notice string) (view.FeedManagementData, error) {
@@ -710,6 +810,24 @@ func (a *App) loadLibrary(r *http.Request) ([]view.CategoryView, []view.FeedView
 	return categories, feeds, nil
 }
 
+func (a *App) loadBoards(r *http.Request) ([]view.BoardView, error) {
+	rows, err := a.queries.ListBoards(r.Context(), a.userID)
+	if err != nil {
+		return nil, err
+	}
+	boards := make([]view.BoardView, 0, len(rows))
+	for _, row := range rows {
+		boards = append(boards, view.BoardView{
+			ID:          row.ID,
+			Name:        row.Name,
+			Description: row.Description.String,
+			Count:       row.ArticleCount,
+			CreatedAt:   articleTime(sql.NullTime{}, row.CreatedAt),
+		})
+	}
+	return boards, nil
+}
+
 func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.ArticleView, error) {
 	params := sqlc.ListRecentArticlesParams{UserID: a.userID, Limit: 50, Offset: 0}
 	var articles []view.ArticleView
@@ -720,7 +838,7 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 			return nil, err
 		}
 		for _, row := range starred {
-			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 		}
 	case "all":
 		rows, err := a.queries.ListRecentArticles(r.Context(), params)
@@ -728,7 +846,15 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 			return nil, err
 		}
 		for _, row := range rows {
-			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
+		}
+	case "read-later":
+		rows, err := a.queries.ListReadLaterArticles(r.Context(), sqlc.ListReadLaterArticlesParams(params))
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 		}
 	default:
 		if strings.HasPrefix(filter, "feed:") {
@@ -738,7 +864,7 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 				return nil, err
 			}
 			for _, row := range rows {
-				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 			}
 			return articles, nil
 		}
@@ -749,7 +875,7 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 				return nil, err
 			}
 			for _, row := range rows {
-				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 			}
 			return articles, nil
 		}
@@ -758,13 +884,13 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 			return nil, err
 		}
 		for _, row := range unread {
-			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 		}
 	}
 	return articles, nil
 }
 
-func articleViewFromRow(id, feedID int64, urlValue, title string, contentValue, excerpt sql.NullString, publishedAt sql.NullTime, createdAt time.Time, isRead, isStarred int64, feedTitle, category string) view.ArticleView {
+func articleViewFromRow(id, feedID int64, urlValue, title string, contentValue, excerpt, imageURL sql.NullString, publishedAt sql.NullTime, createdAt time.Time, isRead, isStarred, isReadLater int64, feedTitle, category string) view.ArticleView {
 	content := service.ReadableText(contentValue.String)
 	summary := service.ReadableText(excerpt.String)
 	if summary == "" {
@@ -780,10 +906,12 @@ func articleViewFromRow(id, feedID int64, urlValue, title string, contentValue, 
 		Time:      articleTime(publishedAt, createdAt),
 		Summary:   summary,
 		Content:   content,
+		ImageURL:  imageURL.String,
 		Category:  category,
 		ReadTime:  readTime(content),
 		IsRead:    isRead != 0,
 		IsStarred: isStarred != 0,
+		ReadLater: isReadLater != 0,
 	}
 }
 
@@ -880,6 +1008,68 @@ func (a *App) setArticleStarred(w http.ResponseWriter, r *http.Request, value in
 	}
 	if err := a.queries.StarArticle(r.Context(), sqlc.StarArticleParams{IsStarred: value, ID: id, UserID: a.userID}); err != nil {
 		a.serverError(w, "star article", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) addReadLater(w http.ResponseWriter, r *http.Request) {
+	a.setArticleReadLater(w, r, 1)
+}
+
+func (a *App) removeReadLater(w http.ResponseWriter, r *http.Request) {
+	a.setArticleReadLater(w, r, 0)
+}
+
+func (a *App) setArticleReadLater(w http.ResponseWriter, r *http.Request, value int64) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.SetArticleReadLater(r.Context(), sqlc.SetArticleReadLaterParams{IsReadLater: value, ID: id, UserID: a.userID}); err != nil {
+		a.serverError(w, "set article read later", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) addArticleToBoard(w http.ResponseWriter, r *http.Request) {
+	articleID, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.serverError(w, "read board form", err)
+		return
+	}
+	boardID, err := strconv.ParseInt(r.PostForm.Get("board_id"), 10, 64)
+	if err != nil || boardID <= 0 {
+		http.Error(w, "invalid board", http.StatusBadRequest)
+		return
+	}
+	if err := a.queries.AddArticleToBoard(r.Context(), sqlc.AddArticleToBoardParams{
+		BoardID:   boardID,
+		ArticleID: articleID,
+		OwnerID:   a.userID,
+	}); err != nil {
+		a.serverError(w, "add article to board", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) removeArticleFromBoard(w http.ResponseWriter, r *http.Request) {
+	boardID, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	articleID, err := strconv.ParseInt(chi.URLParam(r, "articleID"), 10, 64)
+	if err != nil || articleID <= 0 {
+		http.Error(w, "invalid article id", http.StatusBadRequest)
+		return
+	}
+	if err := a.queries.RemoveArticleFromBoard(r.Context(), sqlc.RemoveArticleFromBoardParams{BoardID: boardID, ArticleID: articleID, UserID: a.userID}); err != nil {
+		a.serverError(w, "remove article from board", err)
 		return
 	}
 	redirectBack(w, r)
@@ -1127,11 +1317,26 @@ func normalizeArticleFilter(value string) string {
 		return value
 	}
 	switch value {
-	case "all", "starred":
+	case "all", "starred", "read-later":
 		return value
 	default:
 		return "unread"
 	}
+}
+
+func (a *App) redirectBoards(w http.ResponseWriter, r *http.Request, notice, formError string) {
+	values := url.Values{}
+	if notice != "" {
+		values.Set("notice", notice)
+	}
+	if formError != "" {
+		values.Set("error", formError)
+	}
+	target := "/boards"
+	if encoded := values.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func redirectBack(w http.ResponseWriter, r *http.Request) {

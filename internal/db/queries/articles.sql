@@ -1,6 +1,6 @@
 -- name: ListArticlesByFeed :many
-SELECT id, feed_id, guid, url, title, author, content, excerpt, published_at,
-       created_at, is_read, is_starred
+SELECT id, feed_id, guid, url, title, author, content, excerpt, image_url, published_at,
+       created_at, is_read, is_starred, is_read_later
 FROM articles
 WHERE feed_id = ?
 ORDER BY published_at DESC, id DESC
@@ -16,10 +16,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -39,10 +41,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -62,10 +66,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -85,10 +91,12 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
@@ -108,16 +116,43 @@ SELECT
     a.author,
     a.content,
     a.excerpt,
+    a.image_url,
     a.published_at,
     a.created_at,
     a.is_read,
     a.is_starred,
+    a.is_read_later,
     f.title AS feed_title,
     COALESCE(c.name, 'Uncategorized') AS category
 FROM articles a
 JOIN feeds f ON f.id = a.feed_id
 LEFT JOIN categories c ON c.id = f.category_id
 WHERE f.user_id = ? AND f.category_id = ?
+ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
+LIMIT ? OFFSET ?;
+
+-- name: ListReadLaterArticles :many
+SELECT
+    a.id,
+    a.feed_id,
+    a.guid,
+    a.url,
+    a.title,
+    a.author,
+    a.content,
+    a.excerpt,
+    a.image_url,
+    a.published_at,
+    a.created_at,
+    a.is_read,
+    a.is_starred,
+    a.is_read_later,
+    f.title AS feed_title,
+    COALESCE(c.name, 'Uncategorized') AS category
+FROM articles a
+JOIN feeds f ON f.id = a.feed_id
+LEFT JOIN categories c ON c.id = f.category_id
+WHERE f.user_id = ? AND a.is_read_later = 1
 ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
 LIMIT ? OFFSET ?;
 
@@ -139,6 +174,12 @@ FROM articles a
 JOIN feeds f ON f.id = a.feed_id
 WHERE f.user_id = ? AND a.is_starred = 1;
 
+-- name: CountReadLaterArticles :one
+SELECT COUNT(*)
+FROM articles a
+JOIN feeds f ON f.id = a.feed_id
+WHERE f.user_id = ? AND a.is_read_later = 1;
+
 -- name: CountUnreadArticlesByFeed :many
 SELECT feed_id, COUNT(*) AS unread_count
 FROM articles
@@ -155,12 +196,12 @@ GROUP BY f.category_id;
 
 -- name: CreateArticle :one
 INSERT OR IGNORE INTO articles (
-    feed_id, guid, url, title, author, content, excerpt, published_at
+    feed_id, guid, url, title, author, content, excerpt, image_url, published_at
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, feed_id, guid, url, title, author, content, excerpt, published_at,
-          created_at, is_read, is_starred;
+RETURNING id, feed_id, guid, url, title, author, content, excerpt, image_url, published_at,
+          created_at, is_read, is_starred, is_read_later;
 
 -- name: MarkArticleRead :exec
 UPDATE articles
@@ -171,6 +212,12 @@ WHERE articles.id = ?
 -- name: StarArticle :exec
 UPDATE articles
 SET is_starred = ?
+WHERE articles.id = ?
+  AND articles.feed_id IN (SELECT feeds.id FROM feeds WHERE feeds.user_id = ?);
+
+-- name: SetArticleReadLater :exec
+UPDATE articles
+SET is_read_later = ?
 WHERE articles.id = ?
   AND articles.feed_id IN (SELECT feeds.id FROM feeds WHERE feeds.user_id = ?);
 
@@ -210,6 +257,7 @@ SELECT
     a.url,
     a.title,
     a.excerpt,
+    a.image_url,
     a.published_at,
     f.title AS feed_title,
     snippet(fts, 0, '<mark>', '</mark>', '...', 12) AS title_snippet,

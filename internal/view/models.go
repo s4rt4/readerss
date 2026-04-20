@@ -30,10 +30,12 @@ type FeedView struct {
 type HomeData struct {
 	Categories []CategoryView
 	Feeds      []FeedView
+	Boards     []BoardView
 	Articles   []ArticleView
 	Unread     int64
 	All        int64
 	Starred    int64
+	ReadLater  int64
 	Errors     int
 	Filter     string
 }
@@ -64,10 +66,32 @@ type ArticleView struct {
 	Time      string
 	Summary   string
 	Content   string
+	ImageURL  string
 	Category  string
 	ReadTime  string
 	IsRead    bool
 	IsStarred bool
+	ReadLater bool
+}
+
+type BoardView struct {
+	ID          int64
+	Name        string
+	Description string
+	Count       int64
+	CreatedAt   string
+}
+
+type BoardsData struct {
+	Boards []BoardView
+	Notice string
+	Error  string
+}
+
+type BoardDetailData struct {
+	Board    BoardView
+	Articles []ArticleView
+	Boards   []BoardView
 }
 
 type SearchData struct {
@@ -176,6 +200,9 @@ func articleState(article ArticleView, active bool) string {
 	if article.IsStarred {
 		state += "starred "
 	}
+	if article.ReadLater {
+		state += "read-later "
+	}
 	return state
 }
 
@@ -202,6 +229,29 @@ func articleStarAction(article ArticleView) string {
 		return fmt.Sprintf("/articles/%d/unstar", article.ID)
 	}
 	return fmt.Sprintf("/articles/%d/star", article.ID)
+}
+
+func articleReadLaterAction(article ArticleView) string {
+	if article.ReadLater {
+		return fmt.Sprintf("/articles/%d/read-later/remove", article.ID)
+	}
+	return fmt.Sprintf("/articles/%d/read-later", article.ID)
+}
+
+func articleBoardAction(article ArticleView) string {
+	return fmt.Sprintf("/articles/%d/boards", article.ID)
+}
+
+func boardLink(board BoardView) string {
+	return fmt.Sprintf("/boards/%d", board.ID)
+}
+
+func boardDeleteAction(board BoardView) string {
+	return fmt.Sprintf("/boards/%d/delete", board.ID)
+}
+
+func boardRemoveArticleAction(board BoardView, article ArticleView) string {
+	return fmt.Sprintf("/boards/%d/articles/%d/remove", board.ID, article.ID)
 }
 
 func articleOriginalURL(articles []ArticleView) string {

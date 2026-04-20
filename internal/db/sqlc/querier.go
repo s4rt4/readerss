@@ -9,28 +9,36 @@ import (
 )
 
 type Querier interface {
+	AddArticleToBoard(ctx context.Context, arg AddArticleToBoardParams) error
 	CountAllArticles(ctx context.Context, userID int64) (int64, error)
+	CountReadLaterArticles(ctx context.Context, userID int64) (int64, error)
 	CountStarredArticles(ctx context.Context, userID int64) (int64, error)
 	CountUnreadArticles(ctx context.Context, userID int64) (int64, error)
 	CountUnreadArticlesByCategory(ctx context.Context, userID int64) ([]CountUnreadArticlesByCategoryRow, error)
 	CountUnreadArticlesByFeed(ctx context.Context, userID int64) ([]CountUnreadArticlesByFeedRow, error)
-	CreateArticle(ctx context.Context, arg CreateArticleParams) (Article, error)
+	CreateArticle(ctx context.Context, arg CreateArticleParams) (CreateArticleRow, error)
+	CreateBoard(ctx context.Context, arg CreateBoardParams) (Board, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error)
 	CreateFilterRule(ctx context.Context, arg CreateFilterRuleParams) (FilterRule, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteArticle(ctx context.Context, arg DeleteArticleParams) error
+	DeleteBoard(ctx context.Context, arg DeleteBoardParams) error
 	DeleteFeed(ctx context.Context, arg DeleteFeedParams) error
 	DeleteFilterRule(ctx context.Context, arg DeleteFilterRuleParams) error
 	DeleteReadArticlesOlderThan(ctx context.Context, arg DeleteReadArticlesOlderThanParams) error
+	GetBoard(ctx context.Context, arg GetBoardParams) (Board, error)
 	GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error)
 	GetReaderSettings(ctx context.Context, userID int64) (ReaderSetting, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
-	ListArticlesByFeed(ctx context.Context, arg ListArticlesByFeedParams) ([]Article, error)
+	ListArticlesByFeed(ctx context.Context, arg ListArticlesByFeedParams) ([]ListArticlesByFeedRow, error)
+	ListBoardArticles(ctx context.Context, arg ListBoardArticlesParams) ([]ListBoardArticlesRow, error)
+	ListBoards(ctx context.Context, userID int64) ([]ListBoardsRow, error)
 	ListCategories(ctx context.Context, userID int64) ([]Category, error)
 	ListDueFeeds(ctx context.Context, arg ListDueFeedsParams) ([]Feed, error)
 	ListFeeds(ctx context.Context, userID int64) ([]Feed, error)
 	ListFilterRules(ctx context.Context, userID int64) ([]FilterRule, error)
+	ListReadLaterArticles(ctx context.Context, arg ListReadLaterArticlesParams) ([]ListReadLaterArticlesRow, error)
 	ListRecentArticles(ctx context.Context, arg ListRecentArticlesParams) ([]ListRecentArticlesRow, error)
 	ListRecentArticlesByCategory(ctx context.Context, arg ListRecentArticlesByCategoryParams) ([]ListRecentArticlesByCategoryRow, error)
 	ListRecentArticlesByFeed(ctx context.Context, arg ListRecentArticlesByFeedParams) ([]ListRecentArticlesByFeedRow, error)
@@ -40,7 +48,9 @@ type Querier interface {
 	MarkArticleRead(ctx context.Context, arg MarkArticleReadParams) error
 	MarkCategoryArticlesRead(ctx context.Context, arg MarkCategoryArticlesReadParams) error
 	MarkFeedArticlesRead(ctx context.Context, arg MarkFeedArticlesReadParams) error
+	RemoveArticleFromBoard(ctx context.Context, arg RemoveArticleFromBoardParams) error
 	SearchArticles(ctx context.Context, arg SearchArticlesParams) ([]SearchArticlesRow, error)
+	SetArticleReadLater(ctx context.Context, arg SetArticleReadLaterParams) error
 	StarArticle(ctx context.Context, arg StarArticleParams) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpdateFeedFetchError(ctx context.Context, arg UpdateFeedFetchErrorParams) error

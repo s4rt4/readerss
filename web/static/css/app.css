@@ -478,6 +478,66 @@ h1 {
   margin-left: auto;
 }
 
+.view-menu {
+  position: relative;
+}
+
+.view-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  width: 276px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 94%, #000 6%);
+  box-shadow: var(--shadow);
+  padding: 6px;
+}
+
+.view-popover[hidden] {
+  display: none;
+}
+
+.view-popover-header,
+.view-option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  padding: 0 12px;
+}
+
+.view-popover-header {
+  color: var(--subtle);
+  font-size: 0.9rem;
+}
+
+.view-option {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.view-option:hover,
+.view-option.selected {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.view-option svg,
+.view-popover-header svg {
+  color: var(--subtle);
+}
+
 .segmented {
   display: inline-flex;
   gap: 3px;
@@ -568,6 +628,77 @@ h1 {
   padding: 14px;
 }
 
+.article-list[data-view="cards"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.article-list[data-view="cards"] .article-row {
+  min-height: 190px;
+  align-content: start;
+}
+
+.article-list[data-view="cards"] .article-select {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+.article-list[data-view="cards"] .read-dot {
+  position: absolute;
+  margin: 10px;
+  box-shadow: 0 0 0 3px var(--panel);
+}
+
+.article-list[data-view="cards"] .article-thumb {
+  width: 100%;
+  height: 116px;
+}
+
+.article-list[data-view="cards"] .article-row-summary {
+  -webkit-line-clamp: 4;
+}
+
+.article-list[data-view="article"] .article-row {
+  padding: 18px;
+}
+
+.article-list[data-view="article"] .article-select {
+  grid-template-columns: 8px 132px minmax(0, 1fr);
+}
+
+.article-list[data-view="article"] .article-thumb {
+  width: 132px;
+  height: 92px;
+}
+
+.article-list[data-view="article"] .article-row-summary {
+  -webkit-line-clamp: 5;
+  font-size: 0.96rem;
+}
+
+.article-list[data-view="article"] .article-row-top strong {
+  font-size: 1.08rem;
+}
+
+.article-list[data-view="title"] {
+  gap: 6px;
+}
+
+.article-list[data-view="title"] .article-row {
+  padding: 10px 12px;
+}
+
+.article-list[data-view="title"] .article-row-summary,
+.article-list[data-view="title"] .article-row-meta,
+.article-list[data-view="title"] .article-thumb,
+.article-list[data-view="title"] .row-actions {
+  display: none;
+}
+
+.article-list[data-view="title"] .article-row-top em {
+  font-size: 0.72rem;
+}
+
 .article-row {
   display: grid;
   width: 100%;
@@ -585,7 +716,7 @@ h1 {
 .article-select {
   display: grid;
   width: 100%;
-  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-columns: 8px 84px minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
   border: 0;
@@ -594,6 +725,25 @@ h1 {
   padding: 0;
   text-align: left;
   cursor: pointer;
+}
+
+.article-thumb {
+  display: block;
+  width: 84px;
+  height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--subtle);
+  object-fit: cover;
+}
+
+.article-thumb-fallback {
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 .article-row.active {
@@ -607,6 +757,10 @@ h1 {
 
 .article-row.starred .row-actions form:first-child .mini-icon {
   color: var(--amber);
+}
+
+.article-row.read-later .row-actions form:nth-child(3) .mini-icon {
+  color: var(--blue);
 }
 
 .read-dot {
@@ -673,8 +827,53 @@ h1 {
   gap: 7px;
 }
 
-.row-actions form {
+.row-actions form,
+.board-article-card form {
   margin: 0;
+}
+
+.board-save {
+  position: relative;
+  display: inline-grid;
+}
+
+.board-save-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 8;
+  display: grid;
+  width: 220px;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 12px;
+}
+
+.board-save-popover[hidden] {
+  display: none;
+}
+
+.board-save-popover strong {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.board-save-popover select {
+  height: 36px;
+  min-width: 0;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  padding: 0 8px;
+}
+
+.board-save-popover .secondary-button {
+  width: 100%;
+  height: 34px;
+  justify-content: center;
+  padding: 0 10px;
 }
 
 .mini-icon {
@@ -732,6 +931,20 @@ h1 {
 .article-body {
   max-width: 760px;
   margin: 0 auto;
+}
+
+.article-hero-image {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 22px;
+  object-fit: cover;
+}
+
+.article-hero-image[hidden] {
+  display: none;
 }
 
 .article-header {
@@ -901,6 +1114,7 @@ kbd {
 .settings-grid,
 .search-layout,
 .health-grid,
+.board-article-list,
 .page-shell > .panel {
   max-width: 1180px;
   margin-left: auto;
@@ -991,10 +1205,10 @@ kbd {
 
 .stacked-form input:not([type="checkbox"]),
 .stacked-form select,
+.stacked-form textarea,
 .search-large input {
   width: 100%;
   min-width: 0;
-  height: 42px;
   border: 1px solid var(--line);
   border-radius: 8px;
   outline: 0;
@@ -1003,8 +1217,21 @@ kbd {
   padding: 0 12px;
 }
 
+.stacked-form input:not([type="checkbox"]),
+.stacked-form select,
+.search-large input {
+  height: 42px;
+}
+
+.stacked-form textarea {
+  min-height: 104px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
 .stacked-form input:focus,
 .stacked-form select:focus,
+.stacked-form textarea:focus,
 .search-large input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 122, 95, 0.11);
@@ -1248,6 +1475,24 @@ mark {
   margin-bottom: 18px;
 }
 
+.board-article-list {
+  gap: 14px;
+  padding: 0;
+}
+
+.board-article-card {
+  display: grid;
+  gap: 8px;
+}
+
+.board-article-card .article-row {
+  cursor: default;
+}
+
+.board-article-card .text-button {
+  justify-self: end;
+}
+
 .metric-card {
   display: grid;
   gap: 6px;
@@ -1475,15 +1720,31 @@ mark {
   }
 
   .article-list {
+    grid-template-columns: minmax(0, 1fr) !important;
     padding: 10px;
   }
 
   .article-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .article-select,
+  .article-list[data-view="article"] .article-select {
+    grid-template-columns: 8px minmax(0, 1fr);
+  }
+
+  .article-thumb {
+    display: none;
   }
 
   .row-actions {
-    display: none;
+    display: grid;
+  }
+
+  .board-save-popover {
+    right: -2px;
+    width: min(220px, 72vw);
   }
 
   .article-header,
