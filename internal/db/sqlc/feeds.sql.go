@@ -116,6 +116,64 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 	return i, err
 }
 
+const listDueFeeds = `-- name: ListDueFeeds :many
+SELECT id, user_id, category_id, url, site_url, title, description, icon_url,
+       etag, last_modified, last_fetched_at, last_error, error_count,
+       fetch_interval_minutes, created_at
+FROM feeds
+WHERE user_id = ?
+  AND (
+    last_fetched_at IS NULL
+    OR last_fetched_at <= datetime('now', '-' || fetch_interval_minutes || ' minutes')
+  )
+ORDER BY COALESCE(last_fetched_at, '1970-01-01'), title
+LIMIT ?
+`
+
+type ListDueFeedsParams struct {
+	UserID int64 `json:"user_id"`
+	Limit  int64 `json:"limit"`
+}
+
+func (q *Queries) ListDueFeeds(ctx context.Context, arg ListDueFeedsParams) ([]Feed, error) {
+	rows, err := q.db.QueryContext(ctx, listDueFeeds, arg.UserID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Feed
+	for rows.Next() {
+		var i Feed
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.CategoryID,
+			&i.Url,
+			&i.SiteUrl,
+			&i.Title,
+			&i.Description,
+			&i.IconUrl,
+			&i.Etag,
+			&i.LastModified,
+			&i.LastFetchedAt,
+			&i.LastError,
+			&i.ErrorCount,
+			&i.FetchIntervalMinutes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, category_id, url, site_url, title, description, icon_url,
        etag, last_modified, last_fetched_at, last_error, error_count,
@@ -273,5 +331,22 @@ func (q *Queries) UpdateFeedFetchSuccess(ctx context.Context, arg UpdateFeedFetc
 		arg.ID,
 		arg.UserID,
 	)
+	return err
+}
+
+const updateFeedFetchedAt = `-- name: UpdateFeedFetchedAt :exec
+UPDATE feeds
+SET last_fetched_at = CURRENT_TIMESTAMP,
+    last_error = NULL
+WHERE id = ? AND user_id = ?
+`
+
+type UpdateFeedFetchedAtParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+func (q *Queries) UpdateFeedFetchedAt(ctx context.Context, arg UpdateFeedFetchedAtParams) error {
+	_, err := q.db.ExecContext(ctx, updateFeedFetchedAt, arg.ID, arg.UserID)
 	return err
 }

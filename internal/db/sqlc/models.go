@@ -56,6 +56,26 @@ type Feed struct {
 	CreatedAt            time.Time      `json:"created_at"`
 }
 
+type FilterRule struct {
+	ID        int64         `json:"id"`
+	UserID    int64         `json:"user_id"`
+	FeedID    sql.NullInt64 `json:"feed_id"`
+	MatchType string        `json:"match_type"`
+	Pattern   string        `json:"pattern"`
+	Action    string        `json:"action"`
+	CreatedAt time.Time     `json:"created_at"`
+}
+
+type ReaderSetting struct {
+	UserID                      int64     `json:"user_id"`
+	DefaultFetchIntervalMinutes int64     `json:"default_fetch_interval_minutes"`
+	RetentionDays               int64     `json:"retention_days"`
+	Theme                       string    `json:"theme"`
+	Density                     string    `json:"density"`
+	RespectCacheHeaders         int64     `json:"respect_cache_headers"`
+	UpdatedAt                   time.Time `json:"updated_at"`
+}
+
 type User struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`

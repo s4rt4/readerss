@@ -1,6 +1,10 @@
 package view
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 type CategoryView struct {
 	ID    int64
@@ -19,6 +23,8 @@ type FeedView struct {
 	Status      string
 	StatusTone  string
 	UnreadCount int
+	ErrorCount  int64
+	LastFetched string
 }
 
 type HomeData struct {
@@ -26,6 +32,10 @@ type HomeData struct {
 	Feeds      []FeedView
 	Articles   []ArticleView
 	Unread     int64
+	All        int64
+	Starred    int64
+	Errors     int
+	Filter     string
 }
 
 type FeedManagementData struct {
@@ -58,6 +68,55 @@ type ArticleView struct {
 	ReadTime  string
 	IsRead    bool
 	IsStarred bool
+}
+
+type SearchData struct {
+	Query   string
+	Results []SearchResultView
+}
+
+type SearchResultView struct {
+	Title   string
+	Source  string
+	Snippet string
+	Tag     string
+	Time    string
+	URL     string
+}
+
+type LoginData struct {
+	Next  string
+	Error string
+}
+
+type SettingsData struct {
+	DefaultFetchInterval int64
+	RetentionDays        int64
+	Theme                string
+	Density              string
+	RespectCacheHeaders  bool
+	FilterRules          []FilterRuleView
+	Feeds                []FeedView
+	Notice               string
+	Error                string
+}
+
+type FilterRuleView struct {
+	ID        int64
+	FeedID    int64
+	FeedTitle string
+	MatchType string
+	Pattern   string
+	Action    string
+}
+
+type FeedHealthData struct {
+	Feeds       []FeedView
+	Healthy     int
+	Warnings    int
+	Errors      int
+	Total       int
+	LastChecked string
 }
 
 func (f FeedFormData) IsEditing() bool {
@@ -93,6 +152,14 @@ func selectedInt(value, current int64) bool {
 	return value == current
 }
 
+func selectedString(value, current string) bool {
+	return value == current
+}
+
+func checkedBool(value bool) bool {
+	return value
+}
+
 func categoryDotClass(index int) string {
 	classes := []string{"dot dot-blue", "dot dot-green", "dot dot-amber"}
 	return classes[index%len(classes)]
@@ -110,4 +177,70 @@ func articleState(article ArticleView, active bool) string {
 		state += "starred "
 	}
 	return state
+}
+
+func filterSelected(filter, current string) bool {
+	return filter == current
+}
+
+func navState(filter, current string) string {
+	if filter == current {
+		return "active"
+	}
+	return ""
+}
+
+func articleReadAction(article ArticleView) string {
+	if article.IsRead {
+		return fmt.Sprintf("/articles/%d/unread", article.ID)
+	}
+	return fmt.Sprintf("/articles/%d/read", article.ID)
+}
+
+func articleStarAction(article ArticleView) string {
+	if article.IsStarred {
+		return fmt.Sprintf("/articles/%d/unstar", article.ID)
+	}
+	return fmt.Sprintf("/articles/%d/star", article.ID)
+}
+
+func articleOriginalURL(articles []ArticleView) string {
+	if len(articles) == 0 || articles[0].URL == "" {
+		return "#"
+	}
+	return articles[0].URL
+}
+
+func articleParagraphs(content, fallback string) []string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		content = fallback
+	}
+	parts := strings.Split(content, "\n")
+	paragraphs := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			paragraphs = append(paragraphs, part)
+		}
+	}
+	if len(paragraphs) == 0 && strings.TrimSpace(fallback) != "" {
+		paragraphs = append(paragraphs, strings.TrimSpace(fallback))
+	}
+	return paragraphs
+}
+
+func articleJSONParagraphs(content, fallback string) string {
+	encoded, err := json.Marshal(articleParagraphs(content, fallback))
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
+}
+
+func percent(part, total int) string {
+	if total == 0 {
+		return "0%"
+	}
+	return fmt.Sprintf("%d%%", part*100/total)
 }

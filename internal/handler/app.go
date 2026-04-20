@@ -2,11 +2,14 @@ package handler
 
 import (
 	"database/sql"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,37 +23,81 @@ import (
 )
 
 type App struct {
-	db      *sql.DB
-	queries *sqlc.Queries
-	fetcher *service.FeedFetcher
-	logger  *slog.Logger
-	userID  int64
+	db         *sql.DB
+	queries    *sqlc.Queries
+	fetcher    *service.FeedFetcher
+	logger     *slog.Logger
+	userID     int64
+	sessionKey []byte
+}
+
+type opmlDocument struct {
+	XMLName xml.Name `xml:"opml"`
+	Version string   `xml:"version,attr"`
+	Head    opmlHead `xml:"head"`
+	Body    opmlBody `xml:"body"`
+}
+
+type opmlHead struct {
+	Title string `xml:"title"`
+}
+
+type opmlBody struct {
+	Outlines []opmlOutline `xml:"outline"`
+}
+
+type opmlOutline struct {
+	Text     string        `xml:"text,attr,omitempty"`
+	Title    string        `xml:"title,attr,omitempty"`
+	Type     string        `xml:"type,attr,omitempty"`
+	XMLURL   string        `xml:"xmlUrl,attr,omitempty"`
+	HTMLURL  string        `xml:"htmlUrl,attr,omitempty"`
+	Outlines []opmlOutline `xml:"outline"`
 }
 
 func NewApp(db *sql.DB, logger *slog.Logger, userID int64) *App {
 	queries := sqlc.New(db)
 	return &App{
-		db:      db,
-		queries: queries,
-		fetcher: service.NewFeedFetcher(queries),
-		logger:  logger,
-		userID:  userID,
+		db:         db,
+		queries:    queries,
+		fetcher:    service.NewFeedFetcher(queries),
+		logger:     logger,
+		userID:     userID,
+		sessionKey: []byte(firstNonEmpty(os.Getenv("READRESS_SESSION_KEY"), "readress-local-dev-session-key-change-me")),
 	}
 }
 
 func (a *App) Routes(r chi.Router) {
-	r.Get("/", a.home)
 	r.Get("/login", a.login)
-	r.Get("/feeds/manage", a.feedManagement)
-	r.Post("/feeds", a.createFeed)
-	r.Post("/feeds/refresh", a.refreshAllFeeds)
-	r.Get("/feeds/{id}/edit", a.editFeed)
-	r.Post("/feeds/{id}", a.updateFeed)
-	r.Post("/feeds/{id}/delete", a.deleteFeed)
-	r.Post("/feeds/{id}/refresh", a.refreshFeed)
-	r.Get("/settings", a.settings)
-	r.Get("/search", a.search)
-	r.Get("/feed-health", a.feedHealth)
+	r.Post("/login", a.loginPost)
+	r.Post("/logout", a.logout)
+	r.Group(func(protected chi.Router) {
+		protected.Use(a.requireAuth)
+		protected.Get("/", a.home)
+		protected.Get("/feeds/manage", a.feedManagement)
+		protected.Post("/feeds", a.createFeed)
+		protected.Post("/feeds/refresh", a.refreshAllFeeds)
+		protected.Get("/feeds/{id}/edit", a.editFeed)
+		protected.Post("/feeds/{id}", a.updateFeed)
+		protected.Post("/feeds/{id}/delete", a.deleteFeed)
+		protected.Post("/feeds/{id}/refresh", a.refreshFeed)
+		protected.Post("/feeds/{id}/mark-read", a.markFeedRead)
+		protected.Post("/categories/{id}/mark-read", a.markCategoryRead)
+		protected.Post("/articles/{id}/read", a.markArticleRead)
+		protected.Post("/articles/{id}/unread", a.markArticleUnread)
+		protected.Post("/articles/{id}/star", a.starArticle)
+		protected.Post("/articles/{id}/unstar", a.unstarArticle)
+		protected.Post("/articles/mark-all-read", a.markAllArticlesRead)
+		protected.Get("/settings", a.settings)
+		protected.Post("/settings", a.updateSettings)
+		protected.Get("/settings/opml/export", a.exportOPML)
+		protected.Post("/settings/opml/import", a.importOPML)
+		protected.Post("/settings/filter-rules", a.createFilterRule)
+		protected.Post("/settings/filter-rules/{id}/delete", a.deleteFilterRule)
+		protected.Get("/search", a.search)
+		protected.Get("/feed-health", a.feedHealth)
+		protected.Get("/events", a.events)
+	})
 	r.Get("/healthz", a.healthz)
 }
 
@@ -64,7 +111,36 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
-	render(w, r, view.Login())
+	if a.authenticated(r) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	render(w, r, view.Login(view.LoginData{Next: r.URL.Query().Get("next"), Error: r.URL.Query().Get("error")}))
+}
+
+func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/login?error=Could+not+read+login+form.", http.StatusSeeOther)
+		return
+	}
+	username := strings.TrimSpace(r.PostForm.Get("username"))
+	password := r.PostForm.Get("password")
+	user, err := a.queries.GetUserByUsername(r.Context(), username)
+	if err != nil || !validPassword(user.PasswordHash, password) {
+		http.Redirect(w, r, "/login?error=Invalid+username+or+password.", http.StatusSeeOther)
+		return
+	}
+	a.setSession(w, user.ID, r.PostForm.Get("remember") == "1")
+	target := r.PostForm.Get("next")
+	if target == "" || !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
+		target = "/"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (a *App) logout(w http.ResponseWriter, r *http.Request) {
+	clearSession(w)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (a *App) feedManagement(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +189,7 @@ func (a *App) createFeed(w http.ResponseWriter, r *http.Request) {
 		a.redirectFeedManage(w, r, err.Error(), "")
 		return
 	}
+	form.URL = a.fetcher.DiscoverFeedURL(r.Context(), form.URL)
 
 	feed, err := a.queries.CreateFeed(r.Context(), sqlc.CreateFeedParams{
 		UserID:               a.userID,
@@ -221,15 +298,190 @@ func (a *App) refreshAllFeeds(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) settings(w http.ResponseWriter, r *http.Request) {
-	render(w, r, view.Settings())
+	data, err := a.settingsData(r, r.URL.Query().Get("notice"), r.URL.Query().Get("error"))
+	if err != nil {
+		a.serverError(w, "load settings", err)
+		return
+	}
+	render(w, r, view.Settings(data))
+}
+
+func (a *App) updateSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.redirectSettings(w, r, "", "Could not read settings form.")
+		return
+	}
+
+	params := sqlc.UpsertReaderSettingsParams{
+		UserID:                      a.userID,
+		DefaultFetchIntervalMinutes: parseFormInt(r, "default_fetch_interval_minutes", 60),
+		RetentionDays:               parseFormInt(r, "retention_days", 90),
+		Theme:                       normalizeChoice(r.PostForm.Get("theme"), "system", "system", "light", "dark"),
+		Density:                     normalizeChoice(r.PostForm.Get("density"), "balanced", "comfortable", "balanced", "compact"),
+		RespectCacheHeaders:         boolInt(r.PostForm.Get("respect_cache_headers") == "1"),
+	}
+	if _, err := a.queries.UpsertReaderSettings(r.Context(), params); err != nil {
+		a.redirectSettings(w, r, "", "Could not save settings.")
+		return
+	}
+	a.redirectSettings(w, r, "Settings saved.", "")
+}
+
+func (a *App) exportOPML(w http.ResponseWriter, r *http.Request) {
+	_, feeds, err := a.loadLibrary(r)
+	if err != nil {
+		a.serverError(w, "load feeds for opml", err)
+		return
+	}
+
+	byCategory := map[string][]view.FeedView{}
+	order := []string{}
+	for _, feed := range feeds {
+		category := feed.Category
+		if category == "" {
+			category = "Uncategorized"
+		}
+		if _, ok := byCategory[category]; !ok {
+			order = append(order, category)
+		}
+		byCategory[category] = append(byCategory[category], feed)
+	}
+
+	doc := opmlDocument{Version: "2.0", Head: opmlHead{Title: "ReadeRSS subscriptions"}}
+	for _, category := range order {
+		group := opmlOutline{Text: category, Title: category}
+		for _, feed := range byCategory[category] {
+			group.Outlines = append(group.Outlines, opmlOutline{
+				Text:    feed.Title,
+				Title:   feed.Title,
+				Type:    "rss",
+				XMLURL:  feed.URL,
+				HTMLURL: feed.SiteURL,
+			})
+		}
+		doc.Body.Outlines = append(doc.Body.Outlines, group)
+	}
+
+	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="readerss-subscriptions.opml"`)
+	if _, err := io.WriteString(w, xml.Header); err != nil {
+		return
+	}
+	encoder := xml.NewEncoder(w)
+	encoder.Indent("", "  ")
+	_ = encoder.Encode(doc)
+}
+
+func (a *App) importOPML(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		a.redirectSettings(w, r, "", "Could not read OPML upload.")
+		return
+	}
+	file, _, err := r.FormFile("opml")
+	if err != nil {
+		a.redirectSettings(w, r, "", "Choose an OPML file first.")
+		return
+	}
+	defer file.Close()
+
+	var doc opmlDocument
+	if err := xml.NewDecoder(file).Decode(&doc); err != nil {
+		a.redirectSettings(w, r, "", "Could not parse OPML file.")
+		return
+	}
+
+	imported, skipped := a.importOPMLOutlines(r, doc.Body.Outlines, "")
+	notice := fmt.Sprintf("OPML import finished: %d feeds added, %d skipped.", imported, skipped)
+	a.redirectSettings(w, r, notice, "")
+}
+
+func (a *App) createFilterRule(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		a.redirectSettings(w, r, "", "Could not read filter rule form.")
+		return
+	}
+	pattern := strings.TrimSpace(r.PostForm.Get("pattern"))
+	if pattern == "" {
+		a.redirectSettings(w, r, "", "Filter rule pattern is required.")
+		return
+	}
+	_, err := a.queries.CreateFilterRule(r.Context(), sqlc.CreateFilterRuleParams{
+		UserID:    a.userID,
+		FeedID:    nullInt64(parseFormInt(r, "feed_id", 0)),
+		MatchType: normalizeChoice(r.PostForm.Get("match_type"), "title_contains", "title_contains", "url_contains", "content_contains"),
+		Pattern:   pattern,
+		Action:    normalizeChoice(r.PostForm.Get("action"), "mark_read", "mark_read", "star", "delete"),
+	})
+	if err != nil {
+		a.redirectSettings(w, r, "", "Could not save filter rule.")
+		return
+	}
+	a.redirectSettings(w, r, "Filter rule added.", "")
+}
+
+func (a *App) deleteFilterRule(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.DeleteFilterRule(r.Context(), sqlc.DeleteFilterRuleParams{ID: id, UserID: a.userID}); err != nil {
+		a.redirectSettings(w, r, "", "Could not delete filter rule.")
+		return
+	}
+	a.redirectSettings(w, r, "Filter rule deleted.", "")
 }
 
 func (a *App) search(w http.ResponseWriter, r *http.Request) {
-	render(w, r, view.SearchResults())
+	data, err := a.searchData(r)
+	if err != nil {
+		a.serverError(w, "search articles", err)
+		return
+	}
+	render(w, r, view.SearchResults(data))
 }
 
 func (a *App) feedHealth(w http.ResponseWriter, r *http.Request) {
-	render(w, r, view.FeedHealth())
+	data, err := a.feedHealthData(r)
+	if err != nil {
+		a.serverError(w, "load feed health", err)
+		return
+	}
+	render(w, r, view.FeedHealth(data))
+}
+
+func (a *App) events(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	send := func() bool {
+		unread, err := a.queries.CountUnreadArticles(r.Context(), a.userID)
+		if err != nil {
+			return false
+		}
+		_, _ = fmt.Fprintf(w, "event: unread\ndata: %d\n\n", unread)
+		flusher.Flush()
+		return true
+	}
+	if !send() {
+		return
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			if !send() {
+				return
+			}
+		}
+	}
 }
 
 func (a *App) healthz(w http.ResponseWriter, r *http.Request) {
@@ -252,11 +504,12 @@ func render(w http.ResponseWriter, r *http.Request, component templ.Component) {
 }
 
 func (a *App) homeData(r *http.Request) (view.HomeData, error) {
+	filter := normalizeArticleFilter(r.URL.Query().Get("filter"))
 	categories, feeds, err := a.loadLibrary(r)
 	if err != nil {
 		return view.HomeData{}, err
 	}
-	articles, err := a.loadRecentArticles(r)
+	articles, err := a.loadRecentArticles(r, filter)
 	if err != nil {
 		return view.HomeData{}, err
 	}
@@ -264,7 +517,15 @@ func (a *App) homeData(r *http.Request) (view.HomeData, error) {
 	if err != nil {
 		return view.HomeData{}, err
 	}
-	return view.HomeData{Categories: categories, Feeds: feeds, Articles: articles, Unread: unread}, nil
+	all, _ := a.queries.CountAllArticles(r.Context(), a.userID)
+	starred, _ := a.queries.CountStarredArticles(r.Context(), a.userID)
+	errors := 0
+	for _, feed := range feeds {
+		if feed.StatusTone == "error" {
+			errors++
+		}
+	}
+	return view.HomeData{Categories: categories, Feeds: feeds, Articles: articles, Unread: unread, All: all, Starred: starred, Errors: errors, Filter: filter}, nil
 }
 
 func (a *App) feedManagementData(r *http.Request, form view.FeedFormData, formError, notice string) (view.FeedManagementData, error) {
@@ -281,6 +542,96 @@ func (a *App) feedManagementData(r *http.Request, form view.FeedFormData, formEr
 	}, nil
 }
 
+func (a *App) settingsData(r *http.Request, notice, formError string) (view.SettingsData, error) {
+	settings, err := a.queries.GetReaderSettings(r.Context(), a.userID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return view.SettingsData{}, err
+		}
+		settings, err = a.queries.UpsertReaderSettings(r.Context(), sqlc.UpsertReaderSettingsParams{
+			UserID:                      a.userID,
+			DefaultFetchIntervalMinutes: 60,
+			RetentionDays:               90,
+			Theme:                       "system",
+			Density:                     "balanced",
+			RespectCacheHeaders:         1,
+		})
+		if err != nil {
+			return view.SettingsData{}, err
+		}
+	}
+	_, feeds, err := a.loadLibrary(r)
+	if err != nil {
+		return view.SettingsData{}, err
+	}
+	return view.SettingsData{
+		DefaultFetchInterval: settings.DefaultFetchIntervalMinutes,
+		RetentionDays:        settings.RetentionDays,
+		Theme:                settings.Theme,
+		Density:              settings.Density,
+		RespectCacheHeaders:  settings.RespectCacheHeaders != 0,
+		FilterRules:          a.filterRuleViews(r),
+		Feeds:                feeds,
+		Notice:               notice,
+		Error:                formError,
+	}, nil
+}
+
+func (a *App) feedHealthData(r *http.Request) (view.FeedHealthData, error) {
+	_, feeds, err := a.loadLibrary(r)
+	if err != nil {
+		return view.FeedHealthData{}, err
+	}
+	data := view.FeedHealthData{Feeds: feeds, Total: len(feeds), LastChecked: "Never"}
+	for _, feed := range feeds {
+		switch feed.StatusTone {
+		case "error":
+			data.Errors++
+		case "warn":
+			data.Warnings++
+		default:
+			data.Healthy++
+		}
+		if feed.LastFetched != "Never" {
+			data.LastChecked = feed.LastFetched
+		}
+	}
+	return data, nil
+}
+
+func (a *App) filterRuleViews(r *http.Request) []view.FilterRuleView {
+	rules, err := a.queries.ListFilterRules(r.Context(), a.userID)
+	if err != nil {
+		a.logger.Warn("list filter rules failed", "err", err)
+		return nil
+	}
+	_, feeds, err := a.loadLibrary(r)
+	feedNames := map[int64]string{}
+	for _, feed := range feeds {
+		feedNames[feed.ID] = feed.Title
+	}
+	views := make([]view.FilterRuleView, 0, len(rules))
+	for _, rule := range rules {
+		feedTitle := "All feeds"
+		feedID := int64(0)
+		if rule.FeedID.Valid {
+			feedID = rule.FeedID.Int64
+			if name := feedNames[feedID]; name != "" {
+				feedTitle = name
+			}
+		}
+		views = append(views, view.FilterRuleView{
+			ID:        rule.ID,
+			FeedID:    feedID,
+			FeedTitle: feedTitle,
+			MatchType: rule.MatchType,
+			Pattern:   rule.Pattern,
+			Action:    rule.Action,
+		})
+	}
+	return views
+}
+
 func (a *App) loadLibrary(r *http.Request) ([]view.CategoryView, []view.FeedView, error) {
 	dbCategories, err := a.queries.ListCategories(r.Context(), a.userID)
 	if err != nil {
@@ -290,15 +641,27 @@ func (a *App) loadLibrary(r *http.Request) ([]view.CategoryView, []view.FeedView
 	if err != nil {
 		return nil, nil, err
 	}
+	unreadByFeedRows, _ := a.queries.CountUnreadArticlesByFeed(r.Context(), a.userID)
+	unreadByFeed := make(map[int64]int64, len(unreadByFeedRows))
+	for _, row := range unreadByFeedRows {
+		unreadByFeed[row.FeedID] = row.UnreadCount
+	}
+	unreadByCategoryRows, _ := a.queries.CountUnreadArticlesByCategory(r.Context(), a.userID)
+	unreadByCategory := make(map[int64]int64, len(unreadByCategoryRows))
+	for _, row := range unreadByCategoryRows {
+		if row.CategoryID.Valid {
+			unreadByCategory[row.CategoryID.Int64] = row.UnreadCount
+		}
+	}
 
 	categoryByID := make(map[int64]string, len(dbCategories))
-	countByCategory := make(map[int64]int)
 	categories := make([]view.CategoryView, 0, len(dbCategories))
 	for _, category := range dbCategories {
 		categoryByID[category.ID] = category.Name
 		categories = append(categories, view.CategoryView{
-			ID:   category.ID,
-			Name: category.Name,
+			ID:    category.ID,
+			Name:  category.Name,
+			Count: int(unreadByCategory[category.ID]),
 		})
 	}
 
@@ -311,70 +674,321 @@ func (a *App) loadLibrary(r *http.Request) ([]view.CategoryView, []view.FeedView
 			if name := categoryByID[feed.CategoryID.Int64]; name != "" {
 				categoryName = name
 			}
-			countByCategory[feed.CategoryID.Int64]++
 		}
 		status := "Healthy"
 		tone := "ok"
+		lastFetched := "Never"
+		if feed.LastFetchedAt.Valid {
+			lastFetched = articleTime(feed.LastFetchedAt, time.Now())
+		}
 		if feed.LastError.Valid && strings.TrimSpace(feed.LastError.String) != "" {
 			status = feed.LastError.String
 			tone = "error"
 		} else if feed.ErrorCount > 0 {
 			status = fmt.Sprintf("%d recent errors", feed.ErrorCount)
 			tone = "warn"
+		} else if !feed.LastFetchedAt.Valid {
+			status = "Waiting for first fetch"
+			tone = "warn"
 		}
 		feeds = append(feeds, view.FeedView{
-			ID:         feed.ID,
-			Title:      feed.Title,
-			URL:        feed.Url,
-			SiteURL:    feed.SiteUrl.String,
-			CategoryID: categoryID,
-			Category:   categoryName,
-			Interval:   feed.FetchIntervalMinutes,
-			Status:     status,
-			StatusTone: tone,
+			ID:          feed.ID,
+			Title:       feed.Title,
+			URL:         feed.Url,
+			SiteURL:     feed.SiteUrl.String,
+			CategoryID:  categoryID,
+			Category:    categoryName,
+			Interval:    feed.FetchIntervalMinutes,
+			Status:      status,
+			StatusTone:  tone,
+			UnreadCount: int(unreadByFeed[feed.ID]),
+			ErrorCount:  feed.ErrorCount,
+			LastFetched: lastFetched,
 		})
-	}
-
-	for i := range categories {
-		categories[i].Count = countByCategory[categories[i].ID]
 	}
 
 	return categories, feeds, nil
 }
 
-func (a *App) loadRecentArticles(r *http.Request) ([]view.ArticleView, error) {
-	rows, err := a.queries.ListRecentArticles(r.Context(), sqlc.ListRecentArticlesParams{
-		UserID: a.userID,
-		Limit:  50,
-		Offset: 0,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	articles := make([]view.ArticleView, 0, len(rows))
-	for _, row := range rows {
-		content := row.Content.String
-		summary := row.Excerpt.String
-		if summary == "" {
-			summary = strings.TrimSpace(content)
+func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.ArticleView, error) {
+	params := sqlc.ListRecentArticlesParams{UserID: a.userID, Limit: 50, Offset: 0}
+	var articles []view.ArticleView
+	switch filter {
+	case "starred":
+		starred, err := a.queries.ListStarredArticles(r.Context(), sqlc.ListStarredArticlesParams(params))
+		if err != nil {
+			return nil, err
 		}
-		articles = append(articles, view.ArticleView{
-			ID:        row.ID,
-			FeedID:    row.FeedID,
-			Title:     row.Title,
-			URL:       row.Url,
-			Source:    row.FeedTitle,
-			Time:      articleTime(row.PublishedAt, row.CreatedAt),
-			Summary:   summary,
-			Content:   content,
-			Category:  row.Category,
-			ReadTime:  readTime(content),
-			IsRead:    row.IsRead != 0,
-			IsStarred: row.IsStarred != 0,
-		})
+		for _, row := range starred {
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+		}
+	case "all":
+		rows, err := a.queries.ListRecentArticles(r.Context(), params)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+		}
+	default:
+		if strings.HasPrefix(filter, "feed:") {
+			feedID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "feed:"), 10, 64)
+			rows, err := a.queries.ListRecentArticlesByFeed(r.Context(), sqlc.ListRecentArticlesByFeedParams{UserID: a.userID, ID: feedID, Limit: 50, Offset: 0})
+			if err != nil {
+				return nil, err
+			}
+			for _, row := range rows {
+				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+			}
+			return articles, nil
+		}
+		if strings.HasPrefix(filter, "category:") {
+			categoryID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "category:"), 10, 64)
+			rows, err := a.queries.ListRecentArticlesByCategory(r.Context(), sqlc.ListRecentArticlesByCategoryParams{UserID: a.userID, CategoryID: nullInt64(categoryID), Limit: 50, Offset: 0})
+			if err != nil {
+				return nil, err
+			}
+			for _, row := range rows {
+				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+			}
+			return articles, nil
+		}
+		unread, err := a.queries.ListUnreadArticles(r.Context(), sqlc.ListUnreadArticlesParams(params))
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range unread {
+			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.FeedTitle, row.Category))
+		}
 	}
 	return articles, nil
+}
+
+func articleViewFromRow(id, feedID int64, urlValue, title string, contentValue, excerpt sql.NullString, publishedAt sql.NullTime, createdAt time.Time, isRead, isStarred int64, feedTitle, category string) view.ArticleView {
+	content := service.ReadableText(contentValue.String)
+	summary := service.ReadableText(excerpt.String)
+	if summary == "" {
+		summary = strings.TrimSpace(content)
+	}
+	summary = trimDisplay(summary, 280)
+	return view.ArticleView{
+		ID:        id,
+		FeedID:    feedID,
+		Title:     title,
+		URL:       urlValue,
+		Source:    feedTitle,
+		Time:      articleTime(publishedAt, createdAt),
+		Summary:   summary,
+		Content:   content,
+		Category:  category,
+		ReadTime:  readTime(content),
+		IsRead:    isRead != 0,
+		IsStarred: isStarred != 0,
+	}
+}
+
+func (a *App) searchData(r *http.Request) (view.SearchData, error) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	data := view.SearchData{Query: query}
+	if query == "" {
+		return data, nil
+	}
+	rows, err := a.queries.SearchArticles(r.Context(), sqlc.SearchArticlesParams{
+		Content: ftsQuery(query),
+		UserID:  a.userID,
+	})
+	if err != nil {
+		return a.searchDataLike(r, data, query)
+	}
+	for _, row := range rows {
+		snippet := row.ContentSnippet
+		data.Results = append(data.Results, view.SearchResultView{
+			Title:   stripMarks(row.TitleSnippet, row.Title),
+			Source:  row.FeedTitle,
+			Snippet: snippet,
+			Tag:     "Article",
+			Time:    articleTime(row.PublishedAt, time.Now()),
+			URL:     row.Url,
+		})
+	}
+	return data, nil
+}
+
+func (a *App) searchDataLike(r *http.Request, data view.SearchData, query string) (view.SearchData, error) {
+	rows, err := a.db.QueryContext(r.Context(), `
+SELECT a.title, a.url, COALESCE(a.excerpt, ''), a.published_at, f.title
+FROM articles a
+JOIN feeds f ON f.id = a.feed_id
+WHERE f.user_id = ?
+  AND (a.title LIKE '%' || ? || '%' OR a.content LIKE '%' || ? || '%' OR a.author LIKE '%' || ? || '%')
+ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
+LIMIT 50`, a.userID, query, query, query)
+	if err != nil {
+		return data, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var title, urlValue, snippet, feedTitle string
+		var published sql.NullTime
+		if err := rows.Scan(&title, &urlValue, &snippet, &published, &feedTitle); err != nil {
+			return data, err
+		}
+		data.Results = append(data.Results, view.SearchResultView{
+			Title:   title,
+			Source:  feedTitle,
+			Snippet: highlightSnippet(trimDisplay(service.ReadableText(snippet), 320), query),
+			Tag:     "Article",
+			Time:    articleTime(published, time.Now()),
+			URL:     urlValue,
+		})
+	}
+	return data, rows.Err()
+}
+
+func (a *App) markArticleRead(w http.ResponseWriter, r *http.Request) {
+	a.setArticleRead(w, r, 1)
+}
+
+func (a *App) markArticleUnread(w http.ResponseWriter, r *http.Request) {
+	a.setArticleRead(w, r, 0)
+}
+
+func (a *App) setArticleRead(w http.ResponseWriter, r *http.Request, value int64) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.MarkArticleRead(r.Context(), sqlc.MarkArticleReadParams{IsRead: value, ID: id, UserID: a.userID}); err != nil {
+		a.serverError(w, "mark article read", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) starArticle(w http.ResponseWriter, r *http.Request) {
+	a.setArticleStarred(w, r, 1)
+}
+
+func (a *App) unstarArticle(w http.ResponseWriter, r *http.Request) {
+	a.setArticleStarred(w, r, 0)
+}
+
+func (a *App) setArticleStarred(w http.ResponseWriter, r *http.Request, value int64) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.StarArticle(r.Context(), sqlc.StarArticleParams{IsStarred: value, ID: id, UserID: a.userID}); err != nil {
+		a.serverError(w, "star article", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) markAllArticlesRead(w http.ResponseWriter, r *http.Request) {
+	if err := a.queries.MarkAllArticlesRead(r.Context(), a.userID); err != nil {
+		a.serverError(w, "mark all read", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) markFeedRead(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.MarkFeedArticlesRead(r.Context(), sqlc.MarkFeedArticlesReadParams{FeedID: id, UserID: a.userID}); err != nil {
+		a.serverError(w, "mark feed read", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) markCategoryRead(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := a.queries.MarkCategoryArticlesRead(r.Context(), sqlc.MarkCategoryArticlesReadParams{UserID: a.userID, CategoryID: sql.NullInt64{Int64: id, Valid: true}}); err != nil {
+		a.serverError(w, "mark category read", err)
+		return
+	}
+	redirectBack(w, r)
+}
+
+func (a *App) importOPMLOutlines(r *http.Request, outlines []opmlOutline, categoryName string) (int, int) {
+	imported := 0
+	skipped := 0
+	for _, outline := range outlines {
+		label := firstNonEmpty(outline.Title, outline.Text)
+		if strings.TrimSpace(outline.XMLURL) == "" {
+			childImported, childSkipped := a.importOPMLOutlines(r, outline.Outlines, label)
+			imported += childImported
+			skipped += childSkipped
+			continue
+		}
+
+		feedURL := strings.TrimSpace(outline.XMLURL)
+		parsed, err := url.ParseRequestURI(feedURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			skipped++
+			continue
+		}
+
+		categoryID := int64(0)
+		if strings.TrimSpace(categoryName) != "" {
+			categoryID, _ = a.findOrCreateCategory(r, categoryName)
+		}
+		title := strings.TrimSpace(label)
+		if title == "" {
+			title = parsed.Host
+		}
+		feed, err := a.queries.CreateFeed(r.Context(), sqlc.CreateFeedParams{
+			UserID:               a.userID,
+			CategoryID:           nullInt64(categoryID),
+			Url:                  feedURL,
+			SiteUrl:              nullString(outline.HTMLURL),
+			Title:                title,
+			Description:          sql.NullString{},
+			IconUrl:              sql.NullString{},
+			FetchIntervalMinutes: 60,
+		})
+		if err != nil {
+			skipped++
+			continue
+		}
+		imported++
+		if _, err := a.fetcher.FetchFeed(r.Context(), a.userID, feed.ID); err != nil {
+			a.logger.Warn("opml feed fetch failed", "feed_id", feed.ID, "err", err)
+		}
+	}
+	return imported, skipped
+}
+
+func (a *App) findOrCreateCategory(r *http.Request, name string) (int64, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, nil
+	}
+	categories, err := a.queries.ListCategories(r.Context(), a.userID)
+	if err != nil {
+		return 0, err
+	}
+	for _, category := range categories {
+		if strings.EqualFold(category.Name, name) {
+			return category.ID, nil
+		}
+	}
+	category, err := a.queries.CreateCategory(r.Context(), sqlc.CreateCategoryParams{
+		UserID:    a.userID,
+		Name:      name,
+		SortOrder: int64(len(categories) + 1),
+	})
+	if err != nil {
+		return 0, err
+	}
+	return category.ID, nil
 }
 
 func (a *App) serverError(w http.ResponseWriter, msg string, err error) {
@@ -441,6 +1055,21 @@ func (a *App) redirectFeedManage(w http.ResponseWriter, r *http.Request, formErr
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
+func (a *App) redirectSettings(w http.ResponseWriter, r *http.Request, notice, formError string) {
+	values := url.Values{}
+	if notice != "" {
+		values.Set("notice", notice)
+	}
+	if formError != "" {
+		values.Set("error", formError)
+	}
+	target := "/settings"
+	if encoded := values.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
 func nullString(value string) sql.NullString {
 	value = strings.TrimSpace(value)
 	return sql.NullString{String: value, Valid: value != ""}
@@ -448,6 +1077,113 @@ func nullString(value string) sql.NullString {
 
 func nullInt64(value int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: value, Valid: value > 0}
+}
+
+func parseFormInt(r *http.Request, name string, fallback int64) int64 {
+	value, err := strconv.ParseInt(r.PostForm.Get(name), 10, 64)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
+}
+
+func boolInt(value bool) int64 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func validPassword(stored, password string) bool {
+	// Compatibility for databases created before auth was wired.
+	if stored == "local-dev-password-placeholder" && password == "readerss" {
+		return true
+	}
+	return stored == passwordDigest(password)
+}
+
+func normalizeChoice(value, fallback string, allowed ...string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	for _, option := range allowed {
+		if value == option {
+			return value
+		}
+	}
+	return fallback
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeArticleFilter(value string) string {
+	if strings.HasPrefix(value, "feed:") || strings.HasPrefix(value, "category:") {
+		return value
+	}
+	switch value {
+	case "all", "starred":
+		return value
+	default:
+		return "unread"
+	}
+}
+
+func redirectBack(w http.ResponseWriter, r *http.Request) {
+	target := r.Header.Get("Referer")
+	if target == "" {
+		target = "/"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func highlightSnippet(value, query string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return value
+	}
+	lower := strings.ToLower(value)
+	needle := strings.ToLower(query)
+	index := strings.Index(lower, needle)
+	if index < 0 {
+		return value
+	}
+	end := index + len(query)
+	return value[:index] + "<mark>" + value[index:end] + "</mark>" + value[end:]
+}
+
+func ftsQuery(query string) string {
+	parts := strings.Fields(query)
+	clean := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(part, `"*'`)
+		if part != "" {
+			clean = append(clean, `"`+strings.ReplaceAll(part, `"`, `""`)+`"*`)
+		}
+	}
+	if len(clean) == 0 {
+		return `""`
+	}
+	return strings.Join(clean, " AND ")
+}
+
+func stripMarks(value, fallback string) string {
+	value = strings.ReplaceAll(value, "<mark>", "")
+	value = strings.ReplaceAll(value, "</mark>", "")
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 func articleTime(published sql.NullTime, created time.Time) string {
@@ -478,4 +1214,16 @@ func readTime(content string) string {
 		minutes = 1
 	}
 	return fmt.Sprintf("%d min", minutes)
+}
+
+func trimDisplay(value string, max int) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
 }

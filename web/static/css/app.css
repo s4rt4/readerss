@@ -44,6 +44,7 @@
 
 html,
 body {
+  height: 100%;
   min-height: 100%;
 }
 
@@ -84,11 +85,13 @@ svg {
   grid-template-columns: 292px minmax(0, 1fr);
   height: 100vh;
   min-height: 640px;
+  overflow: hidden;
 }
 
 .sidebar {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   gap: 18px;
   border-right: 1px solid var(--line);
@@ -433,8 +436,11 @@ h1 {
 
 .reader {
   display: grid;
+  height: 100vh;
+  min-height: 0;
   min-width: 0;
   grid-template-rows: 72px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .topbar {
@@ -481,7 +487,11 @@ h1 {
   padding: 3px;
 }
 
-.segmented button {
+.segmented button,
+.segmented a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 32px;
   border: 0;
   border-radius: 6px;
@@ -492,22 +502,28 @@ h1 {
   font-size: 0.86rem;
 }
 
-.segmented button.selected {
+.segmented button.selected,
+.segmented a.selected {
   background: var(--text);
   color: var(--panel);
 }
 
 .content-grid {
   display: grid;
+  height: 100%;
   min-height: 0;
   grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr);
+  overflow: hidden;
 }
 
 .article-list-pane,
 .detail-pane {
   min-width: 0;
+  height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .article-list-pane {
@@ -555,7 +571,7 @@ h1 {
 .article-row {
   display: grid;
   width: 100%;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -564,6 +580,20 @@ h1 {
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.article-select {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
 .article-row.active {
@@ -575,7 +605,7 @@ h1 {
   background: var(--accent);
 }
 
-.article-row.starred .mini-icon:first-child {
+.article-row.starred .row-actions form:first-child .mini-icon {
   color: var(--amber);
 }
 
@@ -590,10 +620,13 @@ h1 {
 .article-row-main {
   display: grid;
   min-width: 0;
+  width: 100%;
   gap: 8px;
 }
 
 .article-row-top {
+  min-width: 0;
+  justify-content: space-between;
   gap: 12px;
 }
 
@@ -640,6 +673,10 @@ h1 {
   gap: 7px;
 }
 
+.row-actions form {
+  margin: 0;
+}
+
 .mini-icon {
   display: inline-grid;
   width: 28px;
@@ -647,7 +684,9 @@ h1 {
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: transparent;
   color: var(--subtle);
+  cursor: pointer;
 }
 
 .mini-icon svg {
@@ -682,6 +721,11 @@ h1 {
 
 .toolbar-buttons {
   gap: 8px;
+}
+
+.toolbar-buttons form,
+.topbar-actions form {
+  margin: 0;
 }
 
 .article-header,
@@ -1011,6 +1055,36 @@ kbd {
   margin: 16px 0;
 }
 
+.opml-import-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.file-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0 14px;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 .state-line {
   display: flex;
   align-items: flex-start;
@@ -1304,7 +1378,9 @@ mark {
   }
 
   .reader {
+    height: auto;
     min-height: 100vh;
+    overflow: visible;
   }
 
   .topbar {
@@ -1320,6 +1396,8 @@ mark {
 
   .content-grid {
     display: block;
+    height: auto;
+    overflow: visible;
   }
 
   .reader:not(.detail-open) .detail-pane {
@@ -1332,10 +1410,14 @@ mark {
 
   .article-list-pane {
     border-right: 0;
+    height: auto;
+    overflow: visible;
   }
 
   .detail-pane {
     border-top: 1px solid var(--line);
+    height: auto;
+    overflow: visible;
   }
 
   .article-header {
@@ -1397,7 +1479,7 @@ mark {
   }
 
   .article-row {
-    grid-template-columns: 8px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .row-actions {

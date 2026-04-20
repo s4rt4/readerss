@@ -6,6 +6,19 @@ FROM feeds
 WHERE user_id = ?
 ORDER BY title;
 
+-- name: ListDueFeeds :many
+SELECT id, user_id, category_id, url, site_url, title, description, icon_url,
+       etag, last_modified, last_fetched_at, last_error, error_count,
+       fetch_interval_minutes, created_at
+FROM feeds
+WHERE user_id = ?
+  AND (
+    last_fetched_at IS NULL
+    OR last_fetched_at <= datetime('now', '-' || fetch_interval_minutes || ' minutes')
+  )
+ORDER BY COALESCE(last_fetched_at, '1970-01-01'), title
+LIMIT ?;
+
 -- name: CreateFeed :one
 INSERT INTO feeds (
     user_id, category_id, url, site_url, title, description, icon_url,
@@ -58,4 +71,10 @@ UPDATE feeds
 SET last_fetched_at = CURRENT_TIMESTAMP,
     last_error = ?,
     error_count = error_count + 1
+WHERE id = ? AND user_id = ?;
+
+-- name: UpdateFeedFetchedAt :exec
+UPDATE feeds
+SET last_fetched_at = CURRENT_TIMESTAMP,
+    last_error = NULL
 WHERE id = ? AND user_id = ?;

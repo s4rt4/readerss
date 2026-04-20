@@ -13,7 +13,7 @@ func EnsureDefaultData(ctx context.Context, conn *sql.DB) (int64, error) {
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
 ON CONFLICT(username) DO NOTHING
-`, DefaultUsername, "local-dev-password-placeholder"); err != nil {
+`, DefaultUsername, "sha256:F2dCBytUHPliqCpZHC7mm9-40Kqv-LGB4xZcQWfOSig"); err != nil {
 		return 0, fmt.Errorf("ensure default user: %w", err)
 	}
 
@@ -33,6 +33,17 @@ WHERE NOT EXISTS (
 `, userID, name, i+1, userID, name); err != nil {
 			return 0, fmt.Errorf("ensure category %q: %w", name, err)
 		}
+	}
+
+	if _, err := conn.ExecContext(ctx, `
+INSERT INTO reader_settings (
+    user_id, default_fetch_interval_minutes, retention_days, theme, density,
+    respect_cache_headers
+)
+VALUES (?, 60, 90, 'system', 'balanced', 1)
+ON CONFLICT(user_id) DO NOTHING
+`, userID); err != nil {
+		return 0, fmt.Errorf("ensure reader settings: %w", err)
 	}
 
 	return userID, nil

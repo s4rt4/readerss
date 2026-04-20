@@ -19,6 +19,12 @@
   }
   syncThemeLogos();
 
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+    });
+  }
+
   function syncThemeLogos() {
     const isDark = root.dataset.theme === "dark";
     document.querySelectorAll("[data-logo-light][data-logo-dark]").forEach((logo) => {
@@ -60,17 +66,22 @@
     const time = row.dataset.time || "";
     const tag = row.dataset.tag || "";
     const summary = row.dataset.summary || "";
-    const content = row.dataset.content || summary;
+    let paragraphs = [summary];
+    try {
+      const parsed = JSON.parse(row.dataset.content || "[]");
+      if (Array.isArray(parsed) && parsed.length) {
+        paragraphs = parsed;
+      }
+    } catch (_) {
+      paragraphs = [summary];
+    }
 
     detail.source.textContent = source;
     detail.time.textContent = time;
     detail.tag.textContent = tag;
     detail.title.textContent = title;
     detail.summary.textContent = summary;
-    detail.body.innerHTML = [
-      "<p>" + escapeHTML(summary) + "</p>",
-      "<p>" + escapeHTML(content) + "</p>",
-    ].join("");
+    detail.body.innerHTML = paragraphs.map((paragraph) => "<p>" + escapeHTML(String(paragraph)) + "</p>").join("");
     reader?.classList.add("detail-open");
   }
 
@@ -106,8 +117,20 @@
     syncThemeLogos();
   });
 
+  document.querySelector("[data-theme-setting]")?.addEventListener("change", function (event) {
+    const next = event.currentTarget.value;
+    if (next === "dark" || next === "light") {
+      root.dataset.theme = next;
+      localStorage.setItem("readress-theme", next);
+    } else {
+      delete root.dataset.theme;
+      localStorage.removeItem("readress-theme");
+    }
+    syncThemeLogos();
+  });
+
   document.querySelectorAll("[data-article-id]").forEach((row) => {
-    row.addEventListener("click", () => selectArticle(row));
+    row.querySelector(".article-select")?.addEventListener("click", () => selectArticle(row));
   });
 
   document.querySelector("[data-search-input]")?.addEventListener("keydown", function (event) {
@@ -117,6 +140,15 @@
       window.location.href = query ? "/search?q=" + encodeURIComponent(query) : "/search";
     }
   });
+
+  if (window.EventSource && document.querySelector("[data-unread-count]")) {
+    const events = new EventSource("/events");
+    events.addEventListener("unread", (event) => {
+      document.querySelectorAll("[data-unread-count]").forEach((item) => {
+        item.textContent = event.data;
+      });
+    });
+  }
 
   function activeArticle() {
     return document.querySelector("[data-article-id].active") || document.querySelector("[data-article-id]");
@@ -153,6 +185,12 @@
 
     if (gPrefix) {
       gPrefix = false;
+      if (event.key === "g") {
+        event.preventDefault();
+        const first = document.querySelector("[data-article-id]");
+        first?.scrollIntoView({ block: "nearest" });
+        first?.querySelector(".article-select")?.click();
+      }
       if (event.key === "h") {
         window.location.href = "/feed-health";
       }
@@ -181,22 +219,29 @@
     }
 
     if (event.key === "o") {
-      activeArticle()?.click();
+      activeArticle()?.querySelector(".article-select")?.click();
     }
 
     if (event.key === "s") {
-      toggleActiveClass("starred");
+      event.preventDefault();
+      activeArticle()?.querySelector("[data-star-action]")?.click();
     }
 
     if (event.key === "m") {
-      toggleActiveClass("unread");
+      event.preventDefault();
+      activeArticle()?.querySelector("[data-read-action]")?.click();
     }
 
     if (event.key === "r") {
-      document.querySelector("[data-loading-state]")?.removeAttribute("hidden");
-      window.setTimeout(() => {
-        document.querySelector("[data-loading-state]")?.setAttribute("hidden", "");
-      }, 900);
+      document.querySelector("[data-refresh-form]")?.requestSubmit();
+    }
+
+    if (event.key === "G") {
+      event.preventDefault();
+      const rows = Array.from(document.querySelectorAll("[data-article-id]"));
+      const last = rows[rows.length - 1];
+      last?.scrollIntoView({ block: "nearest" });
+      last?.querySelector(".article-select")?.click();
     }
 
     if (event.key === "a") {

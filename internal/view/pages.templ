@@ -30,7 +30,7 @@ templ PageHeader(kicker string, title string, summary string) {
 	</header>
 }
 
-templ Login() {
+templ Login(data LoginData) {
 	@Layout("Login - ReadeRSS") {
 		<main class="auth-shell">
 			<section class="auth-panel">
@@ -42,7 +42,14 @@ templ Login() {
 					<h1>Sign in</h1>
 					<p class="muted-copy">Use your local account to open the reader.</p>
 				</div>
-				<form class="stacked-form" action="#" method="post">
+				if data.Error != "" {
+					<div class="state-line error">
+						@IconWarning()
+						<span>{ data.Error }</span>
+					</div>
+				}
+				<form class="stacked-form" action="/login" method="post">
+					<input type="hidden" name="next" value={ data.Next }/>
 					<label>
 						<span>Username</span>
 						<input type="text" name="username" value="sarta"/>
@@ -52,14 +59,14 @@ templ Login() {
 						<input type="password" name="password" placeholder="Enter password"/>
 					</label>
 					<label class="check-row">
-						<input type="checkbox" checked/>
+						<input type="checkbox" name="remember" value="1" checked/>
 						<span>Keep me signed in</span>
 					</label>
 					<button class="primary-button" type="submit">Sign in</button>
 				</form>
 				<div class="state-line ok">
 					@IconCheckCircle()
-					<span>Local session cookies will be wired in the auth backend pass.</span>
+					<span>Default local password: readerss</span>
 				</div>
 			</section>
 		</main>
@@ -172,6 +179,9 @@ templ FeedManageRow(feed FeedView) {
 			<form action={ fmt.Sprintf("/feeds/%d/refresh", feed.ID) } method="post">
 				<button class="icon-button" type="submit" aria-label="Refresh feed" title="Refresh feed">@IconRefresh()</button>
 			</form>
+			<form action={ fmt.Sprintf("/feeds/%d/mark-read", feed.ID) } method="post">
+				<button class="icon-button" type="submit" aria-label="Mark feed read" title="Mark feed read">@IconCheckCircle()</button>
+			</form>
 			<a class="icon-button" href={ fmt.Sprintf("/feeds/%d/edit", feed.ID) } aria-label="Edit feed" title="Edit feed">@IconSettings()</a>
 			<form action={ fmt.Sprintf("/feeds/%d/delete", feed.ID) } method="post">
 				<button class="icon-button danger" type="submit" aria-label="Delete feed" title="Delete feed">@IconTrash()</button>
@@ -180,11 +190,11 @@ templ FeedManageRow(feed FeedView) {
 	</div>
 }
 
-templ Settings() {
+templ Settings(data SettingsData) {
 	@AppPage("Settings") {
 		@PageHeader("Settings", "Reader preferences", "Tune refresh cadence, retention, appearance, and OPML import or export.")
 		<section class="settings-grid">
-			<form class="panel stacked-form" action="#" method="post">
+			<form class="panel stacked-form" action="/settings" method="post">
 				<div class="panel-heading">
 					<div>
 						<h2>Fetching</h2>
@@ -192,29 +202,40 @@ templ Settings() {
 					</div>
 					@IconRefresh()
 				</div>
+				if data.Notice != "" {
+					<div class="state-line ok">
+						@IconCheckCircle()
+						<span>{ data.Notice }</span>
+					</div>
+				}
+				if data.Error != "" {
+					<div class="state-line error">
+						@IconWarning()
+						<span>{ data.Error }</span>
+					</div>
+				}
 				<label>
 					<span>Default fetch interval</span>
-					<select>
-						<option>15 minutes</option>
-						<option>30 minutes</option>
-						<option selected>60 minutes</option>
-						<option>3 hours</option>
+					<select name="default_fetch_interval_minutes">
+						<option value="15" selected?={ selectedInt(15, data.DefaultFetchInterval) }>15 minutes</option>
+						<option value="30" selected?={ selectedInt(30, data.DefaultFetchInterval) }>30 minutes</option>
+						<option value="60" selected?={ selectedInt(60, data.DefaultFetchInterval) }>60 minutes</option>
+						<option value="180" selected?={ selectedInt(180, data.DefaultFetchInterval) }>3 hours</option>
 					</select>
 				</label>
 				<label>
 					<span>Retention policy</span>
-					<select>
-						<option>Keep forever</option>
-						<option selected>Delete read articles after 90 days</option>
-						<option>Delete read articles after 180 days</option>
+					<select name="retention_days">
+						<option value="0" selected?={ selectedInt(0, data.RetentionDays) }>Keep forever</option>
+						<option value="30" selected?={ selectedInt(30, data.RetentionDays) }>Delete read articles after 30 days</option>
+						<option value="90" selected?={ selectedInt(90, data.RetentionDays) }>Delete read articles after 90 days</option>
+						<option value="180" selected?={ selectedInt(180, data.RetentionDays) }>Delete read articles after 180 days</option>
 					</select>
 				</label>
 				<label class="check-row">
-					<input type="checkbox" checked/>
+					<input type="checkbox" name="respect_cache_headers" value="1" checked?={ checkedBool(data.RespectCacheHeaders) }/>
 					<span>Respect ETag and Last-Modified headers</span>
 				</label>
-			</form>
-			<form class="panel stacked-form" action="#" method="post">
 				<div class="panel-heading">
 					<div>
 						<h2>Appearance</h2>
@@ -224,21 +245,84 @@ templ Settings() {
 				</div>
 				<label>
 					<span>Theme</span>
-					<select>
-						<option>System</option>
-						<option>Light</option>
-						<option>Dark</option>
+					<select name="theme" data-theme-setting>
+						<option value="system" selected?={ selectedString("system", data.Theme) }>System</option>
+						<option value="light" selected?={ selectedString("light", data.Theme) }>Light</option>
+						<option value="dark" selected?={ selectedString("dark", data.Theme) }>Dark</option>
 					</select>
 				</label>
 				<label>
 					<span>Article density</span>
-					<select>
-						<option>Comfortable</option>
-						<option selected>Balanced</option>
-						<option>Compact</option>
+					<select name="density">
+						<option value="comfortable" selected?={ selectedString("comfortable", data.Density) }>Comfortable</option>
+						<option value="balanced" selected?={ selectedString("balanced", data.Density) }>Balanced</option>
+						<option value="compact" selected?={ selectedString("compact", data.Density) }>Compact</option>
 					</select>
 				</label>
+				<button class="primary-button" type="submit">Save settings</button>
 			</form>
+			<div class="panel">
+				<div class="panel-heading">
+					<div>
+						<h2>Filter Rules</h2>
+						<p>Automatically mark, star, or remove matching incoming articles.</p>
+					</div>
+					@IconSettings()
+				</div>
+				<form class="stacked-form" action="/settings/filter-rules" method="post">
+					<label>
+						<span>Feed scope</span>
+						<select name="feed_id">
+							<option value="0">All feeds</option>
+							for _, feed := range data.Feeds {
+								<option value={ fmt.Sprint(feed.ID) }>{ feed.Title }</option>
+							}
+						</select>
+					</label>
+					<label>
+						<span>Match</span>
+						<select name="match_type">
+							<option value="title_contains">Title contains</option>
+							<option value="url_contains">URL contains</option>
+							<option value="content_contains">Content contains</option>
+						</select>
+					</label>
+					<label>
+						<span>Pattern</span>
+						<input type="text" name="pattern" placeholder="sponsored"/>
+					</label>
+					<label>
+						<span>Action</span>
+						<select name="action">
+							<option value="mark_read">Mark read</option>
+							<option value="star">Star</option>
+							<option value="delete">Delete</option>
+						</select>
+					</label>
+					<button class="secondary-button" type="submit">Add rule</button>
+				</form>
+				<div class="table-list compact-list">
+					if len(data.FilterRules) == 0 {
+						<div class="empty-panel">
+							@IconInbox()
+							<strong>No rules yet</strong>
+							<p>Rules will run when new articles are fetched.</p>
+						</div>
+					} else {
+						for _, rule := range data.FilterRules {
+							<div class="table-row">
+								<div class="table-main">
+									<strong>{ rule.Pattern }</strong>
+									<small>{ rule.MatchType } · { rule.Action } · { rule.FeedTitle }</small>
+								</div>
+								<form action={ fmt.Sprintf("/settings/filter-rules/%d/delete", rule.ID) } method="post">
+									<button class="icon-button danger" type="submit" aria-label="Delete rule" title="Delete rule">@IconTrash()</button>
+								</form>
+							</div>
+						}
+					}
+				</div>
+			</div>
 			<div class="panel">
 				<div class="panel-heading">
 					<div>
@@ -248,73 +332,101 @@ templ Settings() {
 					@IconArchive()
 				</div>
 				<div class="button-row">
-					<button class="primary-button" type="button">@IconUpload()<span>Import OPML</span></button>
-					<button class="secondary-button" type="button">@IconDownload()<span>Export OPML</span></button>
+					<form action="/settings/opml/import" method="post" enctype="multipart/form-data" class="opml-import-form">
+						<label class="file-button">
+							@IconUpload()
+							<span>Import OPML</span>
+							<input type="file" name="opml" accept=".opml,.xml,text/xml"/>
+						</label>
+						<button class="secondary-button" type="submit">Upload</button>
+					</form>
+					<a class="secondary-button" href="/settings/opml/export">@IconDownload()<span>Export OPML</span></a>
 				</div>
 				<div class="state-line ok">
 					@IconCheckCircle()
-					<span>Last import preview: 42 feeds, 6 categories, 2 duplicates skipped.</span>
+					<span>OPML export uses the feeds currently stored in SQLite.</span>
 				</div>
 			</div>
 		</section>
 	}
 }
 
-templ SearchResults() {
+templ SearchResults(data SearchData) {
 	@AppPage("Search") {
 		@PageHeader("Search", "Find saved articles", "Preview of FTS5 results with highlighted title and content matches.")
 		<section class="search-layout">
 			<form class="search-large" action="/search" method="get">
 				@IconSearch()
-				<input name="q" type="search" value="sqlite wal"/>
+				<input name="q" type="search" value={ data.Query } placeholder="Search title, author, or content"/>
 				<button class="primary-button" type="submit">Search</button>
 			</form>
-			<div class="result-list">
-				@SearchResult("SQLite on the server: practical patterns for small web apps", "Fly.io", "A field guide for <mark>SQLite</mark> <mark>WAL</mark> mode, backups, busy timeouts, and keeping operations boring.", "Database", "28 min ago")
-				@SearchResult("A calm architecture for background workers in Go", "Brandur", "Workers can serialize writes while <mark>SQLite</mark> handles readers through <mark>WAL</mark> mode.", "Backend", "3 hours ago")
-				@SearchResult("ReadeRSS implementation notes", "Local notes", "Use busy timeout, foreign keys, and <mark>WAL</mark> pragmas when opening the <mark>SQLite</mark> connection.", "Notes", "Yesterday")
-			</div>
-			<div class="empty-panel">
-				@IconSearch()
-				<strong>No results state</strong>
-				<p>Shown when a search returns zero matches or the query is empty.</p>
-			</div>
+			if data.Query == "" {
+				<div class="empty-panel">
+					@IconSearch()
+					<strong>Start searching</strong>
+					<p>Enter a query to search articles saved in SQLite.</p>
+				</div>
+			} else if len(data.Results) == 0 {
+				<div class="empty-panel">
+					@IconSearch()
+					<strong>No results</strong>
+					<p>No saved articles matched your query.</p>
+				</div>
+			} else {
+				<div class="result-list">
+					for _, result := range data.Results {
+						@SearchResult(result)
+					}
+				</div>
+			}
 		</section>
 	}
 }
 
-templ SearchResult(title string, source string, snippet string, tag string, time string) {
+templ SearchResult(result SearchResultView) {
 	<article class="search-result">
 		<div>
-			<p class="eyebrow">{ source } · { time }</p>
-			<h2>{ title }</h2>
-			<p>@templ.Raw(snippet)</p>
+			<p class="eyebrow">{ result.Source } · { result.Time }</p>
+			<h2>
+				<a href={ result.URL } target="_blank" rel="noreferrer">{ result.Title }</a>
+			</h2>
+			<p>@templ.Raw(result.Snippet)</p>
 		</div>
-		<span class="pill">{ tag }</span>
+		<span class="pill">{ result.Tag }</span>
 	</article>
 }
 
-templ FeedHealth() {
+templ FeedHealth(data FeedHealthData) {
 	@AppPage("Feed Health") {
 		@PageHeader("Feed health", "Refresh status and errors", "Spot broken feeds, slow responses, and stale subscriptions before they pollute the reader.")
 		<section class="health-grid">
-			@Metric("Healthy feeds", "9", "75% of subscriptions")
-			@Metric("Warnings", "2", "Slow or stale feeds")
-			@Metric("Errors", "1", "Needs attention")
-			@Metric("Avg fetch", "420ms", "Last refresh cycle")
+			@Metric("Healthy feeds", fmt.Sprint(data.Healthy), percent(data.Healthy, data.Total)+" of subscriptions")
+			@Metric("Warnings", fmt.Sprint(data.Warnings), "Feeds with recent recoverable errors")
+			@Metric("Errors", fmt.Sprint(data.Errors), "Feeds needing attention")
+			@Metric("Last checked", data.LastChecked, "Newest fetch timestamp")
 		</section>
 		<section class="panel">
 			<div class="panel-heading">
 				<div>
 					<h2>Feed Status</h2>
-					<p>Mock diagnostics for the future worker dashboard.</p>
+					<p>Diagnostics from feeds stored in SQLite.</p>
 				</div>
-				<button class="text-button" type="button">@IconRefresh()<span>Refresh now</span></button>
+				<form action="/feeds/refresh" method="post">
+					<button class="text-button" type="submit">@IconRefresh()<span>Refresh now</span></button>
+				</form>
 			</div>
 			<div class="table-list">
-				@HealthRow("Hacker News", "200 OK", "312ms", "Fetched 8 new articles", "ok")
-				@HealthRow("The Pragmatic Engineer", "304 Not Modified", "1.8s", "Slow but usable", "warn")
-				@HealthRow("Ars Technica", "Timeout", "10s", "Failed 3 times; next retry uses backoff", "error")
+				if len(data.Feeds) == 0 {
+					<div class="empty-panel">
+						@IconInbox()
+						<strong>No feeds yet</strong>
+						<p>Add feeds before checking health.</p>
+					</div>
+				} else {
+					for _, feed := range data.Feeds {
+						@HealthRow(feed)
+					}
+				}
 			</div>
 		</section>
 	}
@@ -328,14 +440,14 @@ templ Metric(label string, value string, note string) {
 	</div>
 }
 
-templ HealthRow(name string, code string, latency string, message string, tone string) {
+templ HealthRow(feed FeedView) {
 	<div class="table-row">
-		<span class="favicon feed-initials">{ name[:2] }</span>
+		<span class="favicon feed-initials">{ initials(feed.Title) }</span>
 		<div class="table-main">
-			<strong>{ name }</strong>
-			<small>{ message }</small>
+			<strong>{ feed.Title }</strong>
+			<small>{ feed.Status }</small>
 		</div>
-		<span class={ "status-pill " + tone }>{ code }</span>
-		<span class="pill">{ latency }</span>
+		<span class={ "status-pill " + feed.StatusTone }>{ feed.StatusTone }</span>
+		<span class="pill">{ feed.LastFetched }</span>
 	</div>
 }

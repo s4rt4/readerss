@@ -9,24 +9,44 @@ import (
 )
 
 type Querier interface {
+	CountAllArticles(ctx context.Context, userID int64) (int64, error)
+	CountStarredArticles(ctx context.Context, userID int64) (int64, error)
 	CountUnreadArticles(ctx context.Context, userID int64) (int64, error)
+	CountUnreadArticlesByCategory(ctx context.Context, userID int64) ([]CountUnreadArticlesByCategoryRow, error)
+	CountUnreadArticlesByFeed(ctx context.Context, userID int64) ([]CountUnreadArticlesByFeedRow, error)
 	CreateArticle(ctx context.Context, arg CreateArticleParams) (Article, error)
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, error)
+	CreateFilterRule(ctx context.Context, arg CreateFilterRuleParams) (FilterRule, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteArticle(ctx context.Context, arg DeleteArticleParams) error
 	DeleteFeed(ctx context.Context, arg DeleteFeedParams) error
+	DeleteFilterRule(ctx context.Context, arg DeleteFilterRuleParams) error
+	DeleteReadArticlesOlderThan(ctx context.Context, arg DeleteReadArticlesOlderThanParams) error
 	GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error)
+	GetReaderSettings(ctx context.Context, userID int64) (ReaderSetting, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	ListArticlesByFeed(ctx context.Context, arg ListArticlesByFeedParams) ([]Article, error)
 	ListCategories(ctx context.Context, userID int64) ([]Category, error)
+	ListDueFeeds(ctx context.Context, arg ListDueFeedsParams) ([]Feed, error)
 	ListFeeds(ctx context.Context, userID int64) ([]Feed, error)
+	ListFilterRules(ctx context.Context, userID int64) ([]FilterRule, error)
 	ListRecentArticles(ctx context.Context, arg ListRecentArticlesParams) ([]ListRecentArticlesRow, error)
+	ListRecentArticlesByCategory(ctx context.Context, arg ListRecentArticlesByCategoryParams) ([]ListRecentArticlesByCategoryRow, error)
+	ListRecentArticlesByFeed(ctx context.Context, arg ListRecentArticlesByFeedParams) ([]ListRecentArticlesByFeedRow, error)
+	ListStarredArticles(ctx context.Context, arg ListStarredArticlesParams) ([]ListStarredArticlesRow, error)
+	ListUnreadArticles(ctx context.Context, arg ListUnreadArticlesParams) ([]ListUnreadArticlesRow, error)
+	MarkAllArticlesRead(ctx context.Context, userID int64) error
 	MarkArticleRead(ctx context.Context, arg MarkArticleReadParams) error
+	MarkCategoryArticlesRead(ctx context.Context, arg MarkCategoryArticlesReadParams) error
+	MarkFeedArticlesRead(ctx context.Context, arg MarkFeedArticlesReadParams) error
 	SearchArticles(ctx context.Context, arg SearchArticlesParams) ([]SearchArticlesRow, error)
 	StarArticle(ctx context.Context, arg StarArticleParams) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpdateFeedFetchError(ctx context.Context, arg UpdateFeedFetchErrorParams) error
 	UpdateFeedFetchSuccess(ctx context.Context, arg UpdateFeedFetchSuccessParams) error
+	UpdateFeedFetchedAt(ctx context.Context, arg UpdateFeedFetchedAtParams) error
+	UpsertReaderSettings(ctx context.Context, arg UpsertReaderSettingsParams) (ReaderSetting, error)
 }
 
 var _ Querier = (*Queries)(nil)

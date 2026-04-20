@@ -36,12 +36,12 @@ templ Home(data HomeData) {
 					<a class="nav-item" href="/search">
 						<span class="nav-icon">@IconSearch()</span>
 						<span>Search</span>
-						<strong>50</strong>
+						<strong>{ data.All }</strong>
 					</a>
 					<a class="nav-item" href="/feed-health">
 						<span class="nav-icon">@IconPulse()</span>
 						<span>Feed health</span>
-						<strong>3</strong>
+						<strong>{ data.Errors }</strong>
 					</a>
 					<a class="nav-item" href="/settings">
 						<span class="nav-icon">@IconSettings()</span>
@@ -50,20 +50,20 @@ templ Home(data HomeData) {
 					</a>
 				</nav>
 				<nav class="nav-section" aria-label="Library">
-					<a class="nav-item active" href="#">
+					<a class={ "nav-item " + navState(data.Filter, "unread") } href="/?filter=unread">
 						<span class="nav-icon">@IconInbox()</span>
 						<span>Unread</span>
-						<strong>{ data.Unread }</strong>
+						<strong data-unread-count>{ data.Unread }</strong>
 					</a>
-					<a class="nav-item" href="#">
+					<a class={ "nav-item " + navState(data.Filter, "all") } href="/?filter=all">
 						<span class="nav-icon">@IconArchive()</span>
 						<span>All articles</span>
-						<strong>{ len(data.Articles) }</strong>
+						<strong>{ data.All }</strong>
 					</a>
-					<a class="nav-item" href="#">
+					<a class={ "nav-item " + navState(data.Filter, "starred") } href="/?filter=starred">
 						<span class="nav-icon">@IconStar()</span>
 						<span>Starred</span>
-						<strong>9</strong>
+						<strong>{ data.Starred }</strong>
 					</a>
 				</nav>
 				<div class="nav-section">
@@ -74,7 +74,7 @@ templ Home(data HomeData) {
 						</button>
 					</div>
 					for i, category := range data.Categories {
-						<a class="nav-item" href="#">
+						<a class="nav-item" href={ fmt.Sprintf("/?filter=category:%d", category.ID) }>
 							<span class={ categoryDotClass(i) }></span>
 							<span>{ category.Name }</span>
 							<strong>{ category.Count }</strong>
@@ -92,7 +92,7 @@ templ Home(data HomeData) {
 						<div class="sidebar-empty">No feeds yet</div>
 					} else {
 						for _, feed := range data.Feeds {
-							<a class="feed-link" href="#">
+							<a class="feed-link" href={ fmt.Sprintf("/?filter=feed:%d", feed.ID) }>
 								<span class="favicon feed-initials">{ initials(feed.Title) }</span>
 								<span>
 									<strong>{ feed.Title }</strong>
@@ -108,9 +108,11 @@ templ Home(data HomeData) {
 						<strong>Next fetch</strong>
 						<span>{ len(data.Feeds) } feeds configured</span>
 					</div>
-					<a class="icon-button subtle" href="/healthz" aria-label="Health check" title="Health check">
-						@IconPulse()
-					</a>
+					<form action="/logout" method="post">
+						<button class="icon-button subtle" type="submit" aria-label="Logout" title="Logout">
+							@IconExternal()
+						</button>
+					</form>
 				</div>
 			</aside>
 			<div class="sidebar-backdrop" data-close-sidebar></div>
@@ -125,13 +127,15 @@ templ Home(data HomeData) {
 					</div>
 					<div class="topbar-actions">
 						<div class="segmented" aria-label="Article filter">
-							<button class="selected" type="button">Unread</button>
-							<button type="button">All</button>
-							<button type="button">Starred</button>
+							<a class={ templ.KV("selected", filterSelected(data.Filter, "unread")) } href="/?filter=unread">Unread</a>
+							<a class={ templ.KV("selected", filterSelected(data.Filter, "all")) } href="/?filter=all">All</a>
+							<a class={ templ.KV("selected", filterSelected(data.Filter, "starred")) } href="/?filter=starred">Starred</a>
 						</div>
-						<button class="icon-button" type="button" aria-label="Mark all as read" title="Mark all as read">
-							@IconCheckCircle()
-						</button>
+						<form action="/articles/mark-all-read" method="post">
+							<button class="icon-button" type="submit" aria-label="Mark all as read" title="Mark all as read">
+								@IconCheckCircle()
+							</button>
+						</form>
 						<button class="icon-button" type="button" data-toggle-theme aria-label="Toggle theme" title="Toggle theme">
 							@IconMoon()
 						</button>
@@ -170,7 +174,7 @@ templ Home(data HomeData) {
 								<p class="eyebrow">Unread</p>
 								<h2>Today</h2>
 							</div>
-							<form action="/feeds/refresh" method="post">
+							<form action="/feeds/refresh" method="post" data-refresh-form>
 								<button class="text-button" type="submit">
 									@IconRefresh()
 									<span>Refresh</span>
@@ -213,15 +217,21 @@ templ Home(data HomeData) {
 								<button class="icon-button mobile-only" type="button" data-close-detail aria-label="Back to articles" title="Back to articles">
 									@IconArrowLeft()
 								</button>
-								<button class="icon-button" type="button" aria-label="Toggle starred" title="Toggle starred">
-									@IconStar()
-								</button>
-								<button class="icon-button" type="button" aria-label="Toggle read" title="Toggle read">
-									@IconCheckCircle()
-								</button>
-								<button class="icon-button" type="button" aria-label="Open original" title="Open original">
+								if len(data.Articles) > 0 {
+									<form action={ articleStarAction(data.Articles[0]) } method="post">
+										<button class="icon-button" type="submit" aria-label="Toggle starred" title="Toggle starred">
+											@IconStar()
+										</button>
+									</form>
+									<form action={ articleReadAction(data.Articles[0]) } method="post">
+										<button class="icon-button" type="submit" aria-label="Toggle read" title="Toggle read">
+											@IconCheckCircle()
+										</button>
+									</form>
+								}
+								<a class="icon-button" href={ articleOriginalURL(data.Articles) } target="_blank" rel="noreferrer" aria-label="Open original" title="Open original">
 									@IconExternal()
-								</button>
+								</a>
 							</div>
 						</div>
 						<header class="article-header">
@@ -239,8 +249,9 @@ templ Home(data HomeData) {
 							if len(data.Articles) == 0 {
 								<p>Articles fetched from RSS feeds will appear here.</p>
 							} else {
-								<p>{ data.Articles[0].Summary }</p>
-								<p>{ data.Articles[0].Content }</p>
+								for _, paragraph := range articleParagraphs(data.Articles[0].Content, data.Articles[0].Summary) {
+									<p>{ paragraph }</p>
+								}
 							}
 						</div>
 					</article>
@@ -266,6 +277,8 @@ templ Home(data HomeData) {
 					@Shortcut("a", "Add feed")
 					@Shortcut("g h", "Feed health")
 					@Shortcut("g s", "Settings")
+					@Shortcut("g g", "Top")
+					@Shortcut("G", "Bottom")
 					@Shortcut("?", "Shortcuts")
 				</div>
 			</div>
@@ -274,36 +287,41 @@ templ Home(data HomeData) {
 }
 
 templ ArticleRow(article ArticleView, active bool) {
-	<button
+	<article
 		class={ "article-row " + articleState(article, active) }
-		type="button"
 		data-article-id={ fmt.Sprint(article.ID) }
 		data-title={ article.Title }
 		data-source={ article.Source }
 		data-time={ article.Time }
 		data-summary={ article.Summary }
-		data-content={ article.Content }
+		data-content={ articleJSONParagraphs(article.Content, article.Summary) }
 		data-tag={ article.Category }
 		data-url={ article.URL }
 	>
-		<span class="read-dot"></span>
-		<span class="article-row-main">
-			<span class="article-row-top">
-				<strong>{ article.Title }</strong>
-				<em>{ article.ReadTime }</em>
+		<button class="article-select" type="button">
+			<span class="read-dot"></span>
+			<span class="article-row-main">
+				<span class="article-row-top">
+					<strong>{ article.Title }</strong>
+					<em>{ article.ReadTime }</em>
+				</span>
+				<span class="article-row-summary">{ article.Summary }</span>
+				<span class="article-row-meta">
+					<span>{ article.Source }</span>
+					<span>{ article.Time }</span>
+					<span>{ article.Category }</span>
+				</span>
 			</span>
-			<span class="article-row-summary">{ article.Summary }</span>
-			<span class="article-row-meta">
-				<span>{ article.Source }</span>
-				<span>{ article.Time }</span>
-				<span>{ article.Category }</span>
-			</span>
-		</span>
+		</button>
 		<span class="row-actions">
-			<span class="mini-icon">@IconStar()</span>
-			<span class="mini-icon">@IconCheckCircle()</span>
+			<form action={ articleStarAction(article) } method="post">
+				<button class="mini-icon" type="submit" data-star-action aria-label="Toggle starred" title="Toggle starred">@IconStar()</button>
+			</form>
+			<form action={ articleReadAction(article) } method="post">
+				<button class="mini-icon" type="submit" data-read-action aria-label="Toggle read" title="Toggle read">@IconCheckCircle()</button>
+			</form>
 		</span>
-	</button>
+	</article>
 }
 
 templ Shortcut(key string, label string) {
@@ -313,78 +331,79 @@ templ Shortcut(key string, label string) {
 	</div>
 }
 
+// Icons are from Lucide, an open-source icon pack licensed under ISC.
 templ IconMenu() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+	<svg class="lucide lucide-menu" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16"></path><path d="M4 18h16"></path><path d="M4 6h16"></path></svg>
 }
 
 templ IconX() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+	<svg class="lucide lucide-x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
 }
 
 templ IconPlus() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+	<svg class="lucide lucide-plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
 }
 
 templ IconSearch() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"></path></svg>
+	<svg class="lucide lucide-search" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg>
 }
 
 templ IconInbox() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16l-2 10h-4a2 2 0 0 1-4 0H6L4 4Zm2 14h12"></path></svg>
+	<svg class="lucide lucide-inbox" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
 }
 
 templ IconArchive() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v12h12V7M9 11h6M5 4h14v3H5V4Z"></path></svg>
+	<svg class="lucide lucide-archive" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1"></rect><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"></path><path d="M10 12h4"></path></svg>
 }
 
 templ IconStar() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path></svg>
+	<svg class="lucide lucide-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.53 2.33a.5.5 0 0 1 .94 0l2.28 6.9a.5.5 0 0 0 .47.34h7.26a.5.5 0 0 1 .29.9l-5.87 4.26a.5.5 0 0 0-.18.56l2.28 6.9a.5.5 0 0 1-.76.56l-5.87-4.26a.5.5 0 0 0-.58 0l-5.87 4.26a.5.5 0 0 1-.76-.56l2.28-6.9a.5.5 0 0 0-.18-.56L1.88 10.47a.5.5 0 0 1 .29-.9h7.26a.5.5 0 0 0 .47-.34z"></path></svg>
 }
 
 templ IconRefresh() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M18.5 9A7 7 0 0 0 6.7 6.7L4 12m16 0-2.7 5.3A7 7 0 0 1 5.5 15"></path></svg>
+	<svg class="lucide lucide-refresh-cw" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>
 }
 
 templ IconPulse() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h4l2-7 4 14 2-7h4"></path></svg>
+	<svg class="lucide lucide-activity" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path></svg>
 }
 
 templ IconCheckCircle() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5A8 8 0 1 1 17.7 6M8.5 12l2.4 2.4L19 6.3"></path></svg>
+	<svg class="lucide lucide-circle-check" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg>
 }
 
 templ IconMoon() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 7 7 0 1 0 20 15.5Z"></path></svg>
+	<svg class="lucide lucide-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.99 14.93A9 9 0 1 1 9.07 3.01 7 7 0 0 0 20.99 14.93z"></path></svg>
 }
 
 templ IconKeyboard() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v10H4V7Zm3 3h.1M10 10h.1M13 10h.1M16 10h.1M7 14h10"></path></svg>
+	<svg class="lucide lucide-keyboard" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 8h.01"></path><path d="M12 12h.01"></path><path d="M14 8h.01"></path><path d="M16 12h.01"></path><path d="M18 8h.01"></path><path d="M6 8h.01"></path><path d="M7 16h10"></path><path d="M8 12h.01"></path><rect width="20" height="16" x="2" y="4" rx="2"></rect></svg>
 }
 
 templ IconExternal() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5"></path></svg>
+	<svg class="lucide lucide-external-link" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
 }
 
 templ IconSettings() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 12a7.6 7.6 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7.4 7.4 0 0 0-1.7-1L14.5 3h-5l-.4 3a7.4 7.4 0 0 0-1.7 1L5 6 3 9.5 5 11a7.6 7.6 0 0 0 0 2l-2 1.5L5 18l2.4-1a7.4 7.4 0 0 0 1.7 1l.4 3h5l.4-3a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5a7.6 7.6 0 0 0 .1-1Z"></path></svg>
+	<svg class="lucide lucide-settings" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.67 2h4.66l.8 3.2a7.9 7.9 0 0 1 1.36.79l3.14-1 2.33 4.04-2.34 2.2a7.52 7.52 0 0 1 0 1.54l2.34 2.2-2.33 4.04-3.14-1a7.9 7.9 0 0 1-1.36.79l-.8 3.2H9.67l-.8-3.2a7.9 7.9 0 0 1-1.36-.79l-3.14 1-2.33-4.04 2.34-2.2a7.52 7.52 0 0 1 0-1.54l-2.34-2.2L4.37 5l3.14 1a7.9 7.9 0 0 1 1.36-.8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
 }
 
 templ IconWarning() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 3 20h18L12 4Zm0 5v5m0 3h.1"></path></svg>
+	<svg class="lucide lucide-triangle-alert" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
 }
 
 templ IconArrowLeft() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+	<svg class="lucide lucide-arrow-left" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
 }
 
 templ IconTrash() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"></path></svg>
+	<svg class="lucide lucide-trash-2" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
 }
 
 templ IconUpload() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-5 5 5-5 5 5M5 20h14"></path></svg>
+	<svg class="lucide lucide-upload" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m17 8-5-5-5 5"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path></svg>
 }
 
 templ IconDownload() {
-	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14"></path></svg>
+	<svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"></path><path d="m7 10 5 5 5-5"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path></svg>
 }

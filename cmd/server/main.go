@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"readress/internal/config"
 	"readress/internal/db"
 	"readress/internal/handler"
+	webassets "readress/web"
 )
 
 //go:embed migrations/*.sql
@@ -68,7 +70,11 @@ func run() error {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	staticFS, err := fs.Sub(webassets.Static, "static")
+	if err != nil {
+		return fmt.Errorf("load embedded static files: %w", err)
+	}
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServerFS(staticFS)))
 
 	app := handler.NewApp(conn, logger, userID)
 	app.Routes(r)
@@ -81,6 +87,7 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	app.StartBackground(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {
