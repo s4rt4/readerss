@@ -656,7 +656,7 @@ func Home(data HomeData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></form><div class=\"topbar-actions\"><div class=\"view-menu\" data-view-menu><button class=\"icon-button\" type=\"button\" data-view-menu-trigger aria-label=\"Change view\" title=\"Change view\" aria-haspopup=\"true\" aria-expanded=\"false\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</button></form><div class=\"topbar-actions\"><div class=\"view-menu\" data-view-menu><button class=\"icon-button\" type=\"button\" data-view-menu-trigger aria-label=\"Change view\" aria-haspopup=\"true\" aria-expanded=\"false\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

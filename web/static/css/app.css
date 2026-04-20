@@ -401,6 +401,7 @@ h1 {
 
 .feeds {
   min-height: 0;
+  flex: 0 0 auto;
 }
 
 .sidebar-empty {
@@ -471,7 +472,8 @@ h1 {
 
 .sidebar-footer {
   gap: 12px;
-  margin-top: auto;
+  flex-shrink: 0;
+  margin-top: 0;
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
@@ -492,6 +494,8 @@ h1 {
 }
 
 .topbar {
+  position: relative;
+  z-index: 50;
   gap: 16px;
   border-bottom: 1px solid var(--line);
   background: rgba(247, 247, 244, 0.92);
@@ -547,13 +551,14 @@ h1 {
 
 .view-menu {
   position: relative;
+  z-index: 80;
 }
 
 .view-popover {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  z-index: 30;
+  z-index: 120;
   display: grid;
   width: 276px;
   overflow: hidden;

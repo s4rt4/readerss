@@ -179,6 +179,7 @@
   });
   viewMenuTrigger?.addEventListener("click", function (event) {
     event.stopPropagation();
+    viewMenuTrigger.blur();
     if (viewPopover?.hidden) {
       openViewMenu();
     } else {
