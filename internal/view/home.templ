@@ -1,0 +1,390 @@
+package view
+
+import "fmt"
+
+templ Home(data HomeData) {
+	@Layout("ReadeRSS") {
+		<div class="app-shell" data-app-shell>
+			<aside class="sidebar" data-sidebar>
+				<div class="brand-bar">
+					<div class="brand-identity">
+						<a class="app-logo-link" href="/" aria-label="ReadeRSS home">
+							<img class="app-logo theme-logo" src="/static/img/readerss_logo.svg" data-logo-light="/static/img/readerss_logo.svg" data-logo-dark="/static/img/readerss_logo_dark.svg" alt="ReadeRSS"/>
+						</a>
+						<p class="eyebrow">Local Reader</p>
+					</div>
+					<button class="icon-button sidebar-close" type="button" data-close-sidebar aria-label="Close sidebar" title="Close sidebar">
+						@IconX()
+					</button>
+				</div>
+				<form class="add-feed" action="/feeds" method="post">
+					<label for="feed-url">Subscribe</label>
+					<div class="input-row">
+						<input id="feed-url" name="url" type="url" placeholder="https://example.com/feed.xml"/>
+						<input type="hidden" name="fetch_interval_minutes" value="60"/>
+						<button class="icon-button filled" type="submit" aria-label="Add feed" title="Add feed">
+							@IconPlus()
+						</button>
+					</div>
+				</form>
+				<nav class="nav-section" aria-label="Workspace">
+					<a class="nav-item" href="/feeds/manage">
+						<span class="nav-icon">@IconPlus()</span>
+						<span>Manage feeds</span>
+						<strong>{ len(data.Feeds) }</strong>
+					</a>
+					<a class="nav-item" href="/search">
+						<span class="nav-icon">@IconSearch()</span>
+						<span>Search</span>
+						<strong>50</strong>
+					</a>
+					<a class="nav-item" href="/feed-health">
+						<span class="nav-icon">@IconPulse()</span>
+						<span>Feed health</span>
+						<strong>3</strong>
+					</a>
+					<a class="nav-item" href="/settings">
+						<span class="nav-icon">@IconSettings()</span>
+						<span>Settings</span>
+						<strong></strong>
+					</a>
+				</nav>
+				<nav class="nav-section" aria-label="Library">
+					<a class="nav-item active" href="#">
+						<span class="nav-icon">@IconInbox()</span>
+						<span>Unread</span>
+						<strong>{ data.Unread }</strong>
+					</a>
+					<a class="nav-item" href="#">
+						<span class="nav-icon">@IconArchive()</span>
+						<span>All articles</span>
+						<strong>{ len(data.Articles) }</strong>
+					</a>
+					<a class="nav-item" href="#">
+						<span class="nav-icon">@IconStar()</span>
+						<span>Starred</span>
+						<strong>9</strong>
+					</a>
+				</nav>
+				<div class="nav-section">
+					<div class="section-title">
+						<span>Categories</span>
+						<button class="icon-button subtle" type="button" aria-label="Add category" title="Add category">
+							@IconPlus()
+						</button>
+					</div>
+					for i, category := range data.Categories {
+						<a class="nav-item" href="#">
+							<span class={ categoryDotClass(i) }></span>
+							<span>{ category.Name }</span>
+							<strong>{ category.Count }</strong>
+						</a>
+					}
+				</div>
+				<div class="nav-section feeds">
+					<div class="section-title">
+						<span>Feeds</span>
+						<button class="icon-button subtle" type="button" aria-label="Refresh feeds" title="Refresh feeds">
+							@IconRefresh()
+						</button>
+					</div>
+					if len(data.Feeds) == 0 {
+						<div class="sidebar-empty">No feeds yet</div>
+					} else {
+						for _, feed := range data.Feeds {
+							<a class="feed-link" href="#">
+								<span class="favicon feed-initials">{ initials(feed.Title) }</span>
+								<span>
+									<strong>{ feed.Title }</strong>
+									<small>{ feed.URL }</small>
+								</span>
+								<em>{ feed.UnreadCount }</em>
+							</a>
+						}
+					}
+				</div>
+				<div class="sidebar-footer">
+					<div>
+						<strong>Next fetch</strong>
+						<span>{ len(data.Feeds) } feeds configured</span>
+					</div>
+					<a class="icon-button subtle" href="/healthz" aria-label="Health check" title="Health check">
+						@IconPulse()
+					</a>
+				</div>
+			</aside>
+			<div class="sidebar-backdrop" data-close-sidebar></div>
+			<main class="reader">
+				<header class="topbar">
+					<button class="icon-button mobile-only" type="button" data-open-sidebar aria-label="Open sidebar" title="Open sidebar">
+						@IconMenu()
+					</button>
+					<div class="search-box">
+						@IconSearch()
+						<input id="search" type="search" placeholder="Search articles" data-search-input/>
+					</div>
+					<div class="topbar-actions">
+						<div class="segmented" aria-label="Article filter">
+							<button class="selected" type="button">Unread</button>
+							<button type="button">All</button>
+							<button type="button">Starred</button>
+						</div>
+						<button class="icon-button" type="button" aria-label="Mark all as read" title="Mark all as read">
+							@IconCheckCircle()
+						</button>
+						<button class="icon-button" type="button" data-toggle-theme aria-label="Toggle theme" title="Toggle theme">
+							@IconMoon()
+						</button>
+						<button class="icon-button" type="button" data-open-help aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
+							@IconKeyboard()
+						</button>
+					</div>
+				</header>
+				<section class="content-grid">
+					<div class="article-list-pane">
+						<div class="reader-state reader-state-loading" data-loading-state hidden>
+							<span class="spinner"></span>
+							<strong>Fetching latest articles</strong>
+							<p>Checking feed updates and preparing the article list.</p>
+						</div>
+						<div class="reader-state reader-state-empty" data-empty-state hidden>
+							@IconInbox()
+							<strong>No unread articles</strong>
+							<p>New stories will appear here after the next feed refresh.</p>
+							<a class="text-button" href="/feeds/manage">
+								@IconPlus()
+								<span>Add feed</span>
+							</a>
+						</div>
+						<div class="reader-state reader-state-error" data-error-state hidden>
+							@IconWarning()
+							<strong>Some feeds could not refresh</strong>
+							<p>Three feeds returned errors during the last fetch cycle.</p>
+							<a class="text-button" href="/feed-health">
+								@IconPulse()
+								<span>Review health</span>
+							</a>
+						</div>
+						<div class="pane-heading">
+							<div>
+								<p class="eyebrow">Unread</p>
+								<h2>Today</h2>
+							</div>
+							<form action="/feeds/refresh" method="post">
+								<button class="text-button" type="submit">
+									@IconRefresh()
+									<span>Refresh</span>
+								</button>
+							</form>
+						</div>
+						<div class="article-list" data-article-list>
+							if len(data.Articles) == 0 {
+								<div class="empty-panel">
+									@IconInbox()
+									<strong>No articles yet</strong>
+									<p>Add a feed or refresh your existing feeds to pull articles into ReadeRSS.</p>
+									<a class="text-button" href="/feeds/manage">
+										@IconPlus()
+										<span>Manage feeds</span>
+									</a>
+								</div>
+							} else {
+								for i, article := range data.Articles {
+									@ArticleRow(article, i == 0)
+								}
+							}
+						</div>
+					</div>
+					<article class="detail-pane" data-detail-pane data-mobile-detail>
+						<div class="article-toolbar">
+							<div class="article-source">
+								<img class="app-icon" src="/static/img/readerss_favicon.svg" alt=""/>
+								<div>
+									if len(data.Articles) == 0 {
+										<strong data-detail-source>ReadeRSS</strong>
+										<span data-detail-time>No article selected</span>
+									} else {
+										<strong data-detail-source>{ data.Articles[0].Source }</strong>
+										<span data-detail-time>{ data.Articles[0].Time }</span>
+									}
+								</div>
+							</div>
+							<div class="toolbar-buttons">
+								<button class="icon-button mobile-only" type="button" data-close-detail aria-label="Back to articles" title="Back to articles">
+									@IconArrowLeft()
+								</button>
+								<button class="icon-button" type="button" aria-label="Toggle starred" title="Toggle starred">
+									@IconStar()
+								</button>
+								<button class="icon-button" type="button" aria-label="Toggle read" title="Toggle read">
+									@IconCheckCircle()
+								</button>
+								<button class="icon-button" type="button" aria-label="Open original" title="Open original">
+									@IconExternal()
+								</button>
+							</div>
+						</div>
+						<header class="article-header">
+							if len(data.Articles) == 0 {
+								<p class="tag" data-detail-tag>Ready</p>
+								<h2 data-detail-title>No article selected</h2>
+								<p data-detail-summary>Add feeds and refresh them to start reading real articles.</p>
+							} else {
+								<p class="tag" data-detail-tag>{ data.Articles[0].Category }</p>
+								<h2 data-detail-title>{ data.Articles[0].Title }</h2>
+								<p data-detail-summary>{ data.Articles[0].Summary }</p>
+							}
+						</header>
+						<div class="article-body" data-detail-body>
+							if len(data.Articles) == 0 {
+								<p>Articles fetched from RSS feeds will appear here.</p>
+							} else {
+								<p>{ data.Articles[0].Summary }</p>
+								<p>{ data.Articles[0].Content }</p>
+							}
+						</div>
+					</article>
+				</section>
+			</main>
+		</div>
+		<div class="help-modal" data-help-modal hidden>
+			<div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+				<div class="modal-header">
+					<h2 id="shortcuts-title">Keyboard Shortcuts</h2>
+					<button class="icon-button" type="button" data-close-help aria-label="Close shortcuts" title="Close shortcuts">
+						@IconX()
+					</button>
+				</div>
+				<div class="shortcut-grid">
+					@Shortcut("j", "Next article")
+					@Shortcut("k", "Previous article")
+					@Shortcut("o", "Open article")
+					@Shortcut("s", "Star article")
+					@Shortcut("m", "Toggle read")
+					@Shortcut("/", "Search")
+					@Shortcut("r", "Refresh")
+					@Shortcut("a", "Add feed")
+					@Shortcut("g h", "Feed health")
+					@Shortcut("g s", "Settings")
+					@Shortcut("?", "Shortcuts")
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ ArticleRow(article ArticleView, active bool) {
+	<button
+		class={ "article-row " + articleState(article, active) }
+		type="button"
+		data-article-id={ fmt.Sprint(article.ID) }
+		data-title={ article.Title }
+		data-source={ article.Source }
+		data-time={ article.Time }
+		data-summary={ article.Summary }
+		data-content={ article.Content }
+		data-tag={ article.Category }
+		data-url={ article.URL }
+	>
+		<span class="read-dot"></span>
+		<span class="article-row-main">
+			<span class="article-row-top">
+				<strong>{ article.Title }</strong>
+				<em>{ article.ReadTime }</em>
+			</span>
+			<span class="article-row-summary">{ article.Summary }</span>
+			<span class="article-row-meta">
+				<span>{ article.Source }</span>
+				<span>{ article.Time }</span>
+				<span>{ article.Category }</span>
+			</span>
+		</span>
+		<span class="row-actions">
+			<span class="mini-icon">@IconStar()</span>
+			<span class="mini-icon">@IconCheckCircle()</span>
+		</span>
+	</button>
+}
+
+templ Shortcut(key string, label string) {
+	<div class="shortcut-item">
+		<kbd>{ key }</kbd>
+		<span>{ label }</span>
+	</div>
+}
+
+templ IconMenu() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+}
+
+templ IconX() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+}
+
+templ IconPlus() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+}
+
+templ IconSearch() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z"></path></svg>
+}
+
+templ IconInbox() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16l-2 10h-4a2 2 0 0 1-4 0H6L4 4Zm2 14h12"></path></svg>
+}
+
+templ IconArchive() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M6 7v12h12V7M9 11h6M5 4h14v3H5V4Z"></path></svg>
+}
+
+templ IconStar() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"></path></svg>
+}
+
+templ IconRefresh() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M18.5 9A7 7 0 0 0 6.7 6.7L4 12m16 0-2.7 5.3A7 7 0 0 1 5.5 15"></path></svg>
+}
+
+templ IconPulse() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h4l2-7 4 14 2-7h4"></path></svg>
+}
+
+templ IconCheckCircle() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5A8 8 0 1 1 17.7 6M8.5 12l2.4 2.4L19 6.3"></path></svg>
+}
+
+templ IconMoon() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 7 7 0 1 0 20 15.5Z"></path></svg>
+}
+
+templ IconKeyboard() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v10H4V7Zm3 3h.1M10 10h.1M13 10h.1M16 10h.1M7 14h10"></path></svg>
+}
+
+templ IconExternal() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5"></path></svg>
+}
+
+templ IconSettings() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 12a7.6 7.6 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7.4 7.4 0 0 0-1.7-1L14.5 3h-5l-.4 3a7.4 7.4 0 0 0-1.7 1L5 6 3 9.5 5 11a7.6 7.6 0 0 0 0 2l-2 1.5L5 18l2.4-1a7.4 7.4 0 0 0 1.7 1l.4 3h5l.4-3a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5a7.6 7.6 0 0 0 .1-1Z"></path></svg>
+}
+
+templ IconWarning() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 3 20h18L12 4Zm0 5v5m0 3h.1"></path></svg>
+}
+
+templ IconArrowLeft() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+}
+
+templ IconTrash() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"></path></svg>
+}
+
+templ IconUpload() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-5 5 5-5 5 5M5 20h14"></path></svg>
+}
+
+templ IconDownload() {
+	<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14"></path></svg>
+}

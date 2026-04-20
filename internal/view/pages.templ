@@ -1,0 +1,341 @@
+package view
+
+import "fmt"
+
+templ AppPage(title string) {
+	@Layout(title + " - ReadeRSS") {
+		<div class="page-shell">
+			<header class="page-topbar">
+				<a class="brand-link" href="/">
+					<img class="brand-logo theme-logo" src="/static/img/readerss_logo.svg" data-logo-light="/static/img/readerss_logo.svg" data-logo-dark="/static/img/readerss_logo_dark.svg" alt="ReadeRSS"/>
+				</a>
+				<nav class="page-nav" aria-label="Application">
+					<a href="/">Reader</a>
+					<a href="/feeds/manage">Feeds</a>
+					<a href="/search">Search</a>
+					<a href="/feed-health">Health</a>
+					<a href="/settings">Settings</a>
+				</nav>
+			</header>
+			{ children... }
+		</div>
+	}
+}
+
+templ PageHeader(kicker string, title string, summary string) {
+	<header class="page-header">
+		<p class="eyebrow">{ kicker }</p>
+		<h1>{ title }</h1>
+		<p>{ summary }</p>
+	</header>
+}
+
+templ Login() {
+	@Layout("Login - ReadeRSS") {
+		<main class="auth-shell">
+			<section class="auth-panel">
+				<a class="brand-link" href="/">
+					<img class="brand-logo theme-logo" src="/static/img/readerss_logo.svg" data-logo-light="/static/img/readerss_logo.svg" data-logo-dark="/static/img/readerss_logo_dark.svg" alt="ReadeRSS"/>
+				</a>
+				<div>
+					<p class="eyebrow">Welcome back</p>
+					<h1>Sign in</h1>
+					<p class="muted-copy">Use your local account to open the reader.</p>
+				</div>
+				<form class="stacked-form" action="#" method="post">
+					<label>
+						<span>Username</span>
+						<input type="text" name="username" value="sarta"/>
+					</label>
+					<label>
+						<span>Password</span>
+						<input type="password" name="password" placeholder="Enter password"/>
+					</label>
+					<label class="check-row">
+						<input type="checkbox" checked/>
+						<span>Keep me signed in</span>
+					</label>
+					<button class="primary-button" type="submit">Sign in</button>
+				</form>
+				<div class="state-line ok">
+					@IconCheckCircle()
+					<span>Local session cookies will be wired in the auth backend pass.</span>
+				</div>
+			</section>
+		</main>
+	}
+}
+
+templ FeedManagement(data FeedManagementData) {
+	@AppPage("Feed Management") {
+		@PageHeader("Feed management", "Add, edit, and organize feeds", "Subscribe by URL, assign categories, inspect errors, and prepare feed actions before the backend is connected.")
+		<section class="management-grid">
+			<form class="panel stacked-form" action={ data.Form.Action() } method="post">
+				<div class="panel-heading">
+					<div>
+						if data.Form.IsEditing() {
+							<h2>Edit Feed</h2>
+							<p>Update the feed metadata and refresh cadence.</p>
+						} else {
+							<h2>Add Feed</h2>
+							<p>Subscribe by RSS, Atom, JSON Feed, or homepage URL.</p>
+						}
+					</div>
+					@IconPlus()
+				</div>
+				if data.Notice != "" {
+					<div class="state-line ok">
+						@IconCheckCircle()
+						<span>{ data.Notice }</span>
+					</div>
+				}
+				if data.Error != "" {
+					<div class="state-line error">
+						@IconWarning()
+						<span>{ data.Error }</span>
+					</div>
+				}
+				<label>
+					<span>Feed or homepage URL</span>
+					<input type="url" name="url" value={ data.Form.URL } placeholder="https://example.com/feed.xml"/>
+				</label>
+				<label>
+					<span>Title</span>
+					<input type="text" name="title" value={ data.Form.Title } placeholder="Example Feed"/>
+				</label>
+				<label>
+					<span>Site URL</span>
+					<input type="url" name="site_url" value={ data.Form.SiteURL } placeholder="https://example.com"/>
+				</label>
+				<label>
+					<span>Category</span>
+					<select name="category_id">
+						<option value="0">Uncategorized</option>
+						for _, category := range data.Categories {
+							<option value={ fmt.Sprint(category.ID) } selected?={ selectedInt(category.ID, data.Form.CategoryID) }>{ category.Name }</option>
+						}
+					</select>
+				</label>
+				<label>
+					<span>Fetch interval</span>
+					<select name="fetch_interval_minutes">
+						<option value="30" selected?={ selectedInt(30, data.Form.Interval) }>Every 30 minutes</option>
+						<option value="60" selected?={ selectedInt(60, data.Form.Interval) }>Every 60 minutes</option>
+						<option value="180" selected?={ selectedInt(180, data.Form.Interval) }>Every 3 hours</option>
+					</select>
+				</label>
+				<div class="button-row">
+					<button class="primary-button" type="submit">{ data.Form.SubmitLabel() }</button>
+					if data.Form.IsEditing() {
+						<a class="secondary-button" href="/feeds/manage">Cancel</a>
+					}
+				</div>
+			</form>
+			<div class="panel">
+				<div class="panel-heading">
+					<div>
+						<h2>Feeds</h2>
+						<p>Feeds stored in the local SQLite database.</p>
+					</div>
+					<form action="/feeds/refresh" method="post">
+						<button class="text-button" type="submit">@IconRefresh()<span>Check all</span></button>
+					</form>
+				</div>
+				<div class="table-list">
+					if len(data.Feeds) == 0 {
+						<div class="empty-panel">
+							@IconInbox()
+							<strong>No feeds yet</strong>
+							<p>Add your first feed using the form on this page.</p>
+						</div>
+					} else {
+						for _, feed := range data.Feeds {
+							@FeedManageRow(feed)
+						}
+					}
+				</div>
+			</div>
+		</section>
+	}
+}
+
+templ FeedManageRow(feed FeedView) {
+	<div class="table-row">
+		<span class="favicon feed-initials">{ initials(feed.Title) }</span>
+		<div class="table-main">
+			<strong>{ feed.Title }</strong>
+			<small>{ feed.URL }</small>
+		</div>
+		<span class="pill">{ feed.Category }</span>
+		<span class={ "status-pill " + feed.StatusTone }>{ feed.Status }</span>
+		<div class="row-tools">
+			<form action={ fmt.Sprintf("/feeds/%d/refresh", feed.ID) } method="post">
+				<button class="icon-button" type="submit" aria-label="Refresh feed" title="Refresh feed">@IconRefresh()</button>
+			</form>
+			<a class="icon-button" href={ fmt.Sprintf("/feeds/%d/edit", feed.ID) } aria-label="Edit feed" title="Edit feed">@IconSettings()</a>
+			<form action={ fmt.Sprintf("/feeds/%d/delete", feed.ID) } method="post">
+				<button class="icon-button danger" type="submit" aria-label="Delete feed" title="Delete feed">@IconTrash()</button>
+			</form>
+		</div>
+	</div>
+}
+
+templ Settings() {
+	@AppPage("Settings") {
+		@PageHeader("Settings", "Reader preferences", "Tune refresh cadence, retention, appearance, and OPML import or export.")
+		<section class="settings-grid">
+			<form class="panel stacked-form" action="#" method="post">
+				<div class="panel-heading">
+					<div>
+						<h2>Fetching</h2>
+						<p>Default behavior for newly subscribed feeds.</p>
+					</div>
+					@IconRefresh()
+				</div>
+				<label>
+					<span>Default fetch interval</span>
+					<select>
+						<option>15 minutes</option>
+						<option>30 minutes</option>
+						<option selected>60 minutes</option>
+						<option>3 hours</option>
+					</select>
+				</label>
+				<label>
+					<span>Retention policy</span>
+					<select>
+						<option>Keep forever</option>
+						<option selected>Delete read articles after 90 days</option>
+						<option>Delete read articles after 180 days</option>
+					</select>
+				</label>
+				<label class="check-row">
+					<input type="checkbox" checked/>
+					<span>Respect ETag and Last-Modified headers</span>
+				</label>
+			</form>
+			<form class="panel stacked-form" action="#" method="post">
+				<div class="panel-heading">
+					<div>
+						<h2>Appearance</h2>
+						<p>Theme preference and reading density.</p>
+					</div>
+					@IconMoon()
+				</div>
+				<label>
+					<span>Theme</span>
+					<select>
+						<option>System</option>
+						<option>Light</option>
+						<option>Dark</option>
+					</select>
+				</label>
+				<label>
+					<span>Article density</span>
+					<select>
+						<option>Comfortable</option>
+						<option selected>Balanced</option>
+						<option>Compact</option>
+					</select>
+				</label>
+			</form>
+			<div class="panel">
+				<div class="panel-heading">
+					<div>
+						<h2>OPML</h2>
+						<p>Move feed subscriptions in or out of ReadeRSS.</p>
+					</div>
+					@IconArchive()
+				</div>
+				<div class="button-row">
+					<button class="primary-button" type="button">@IconUpload()<span>Import OPML</span></button>
+					<button class="secondary-button" type="button">@IconDownload()<span>Export OPML</span></button>
+				</div>
+				<div class="state-line ok">
+					@IconCheckCircle()
+					<span>Last import preview: 42 feeds, 6 categories, 2 duplicates skipped.</span>
+				</div>
+			</div>
+		</section>
+	}
+}
+
+templ SearchResults() {
+	@AppPage("Search") {
+		@PageHeader("Search", "Find saved articles", "Preview of FTS5 results with highlighted title and content matches.")
+		<section class="search-layout">
+			<form class="search-large" action="/search" method="get">
+				@IconSearch()
+				<input name="q" type="search" value="sqlite wal"/>
+				<button class="primary-button" type="submit">Search</button>
+			</form>
+			<div class="result-list">
+				@SearchResult("SQLite on the server: practical patterns for small web apps", "Fly.io", "A field guide for <mark>SQLite</mark> <mark>WAL</mark> mode, backups, busy timeouts, and keeping operations boring.", "Database", "28 min ago")
+				@SearchResult("A calm architecture for background workers in Go", "Brandur", "Workers can serialize writes while <mark>SQLite</mark> handles readers through <mark>WAL</mark> mode.", "Backend", "3 hours ago")
+				@SearchResult("ReadeRSS implementation notes", "Local notes", "Use busy timeout, foreign keys, and <mark>WAL</mark> pragmas when opening the <mark>SQLite</mark> connection.", "Notes", "Yesterday")
+			</div>
+			<div class="empty-panel">
+				@IconSearch()
+				<strong>No results state</strong>
+				<p>Shown when a search returns zero matches or the query is empty.</p>
+			</div>
+		</section>
+	}
+}
+
+templ SearchResult(title string, source string, snippet string, tag string, time string) {
+	<article class="search-result">
+		<div>
+			<p class="eyebrow">{ source } · { time }</p>
+			<h2>{ title }</h2>
+			<p>@templ.Raw(snippet)</p>
+		</div>
+		<span class="pill">{ tag }</span>
+	</article>
+}
+
+templ FeedHealth() {
+	@AppPage("Feed Health") {
+		@PageHeader("Feed health", "Refresh status and errors", "Spot broken feeds, slow responses, and stale subscriptions before they pollute the reader.")
+		<section class="health-grid">
+			@Metric("Healthy feeds", "9", "75% of subscriptions")
+			@Metric("Warnings", "2", "Slow or stale feeds")
+			@Metric("Errors", "1", "Needs attention")
+			@Metric("Avg fetch", "420ms", "Last refresh cycle")
+		</section>
+		<section class="panel">
+			<div class="panel-heading">
+				<div>
+					<h2>Feed Status</h2>
+					<p>Mock diagnostics for the future worker dashboard.</p>
+				</div>
+				<button class="text-button" type="button">@IconRefresh()<span>Refresh now</span></button>
+			</div>
+			<div class="table-list">
+				@HealthRow("Hacker News", "200 OK", "312ms", "Fetched 8 new articles", "ok")
+				@HealthRow("The Pragmatic Engineer", "304 Not Modified", "1.8s", "Slow but usable", "warn")
+				@HealthRow("Ars Technica", "Timeout", "10s", "Failed 3 times; next retry uses backoff", "error")
+			</div>
+		</section>
+	}
+}
+
+templ Metric(label string, value string, note string) {
+	<div class="metric-card">
+		<span>{ label }</span>
+		<strong>{ value }</strong>
+		<small>{ note }</small>
+	</div>
+}
+
+templ HealthRow(name string, code string, latency string, message string, tone string) {
+	<div class="table-row">
+		<span class="favicon feed-initials">{ name[:2] }</span>
+		<div class="table-main">
+			<strong>{ name }</strong>
+			<small>{ message }</small>
+		</div>
+		<span class={ "status-pill " + tone }>{ code }</span>
+		<span class="pill">{ latency }</span>
+	</div>
+}
