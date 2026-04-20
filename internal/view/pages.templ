@@ -5,20 +5,22 @@ import "fmt"
 templ AppPage(title string) {
 	@Layout(title + " - ReadeRSS") {
 		<div class="page-shell">
-			<header class="page-topbar">
+			<aside class="page-sidebar">
 				<a class="brand-link" href="/">
 					<img class="brand-logo theme-logo" src="/static/img/readerss_logo.svg" data-logo-light="/static/img/readerss_logo.svg" data-logo-dark="/static/img/readerss_logo_dark.svg" alt="ReadeRSS"/>
 				</a>
 				<nav class="page-nav" aria-label="Application">
-					<a href="/">Reader</a>
-					<a href="/feeds/manage">Feeds</a>
-					<a href="/boards">Boards</a>
-					<a href="/search">Search</a>
-					<a href="/feed-health">Health</a>
-					<a href="/settings">Settings</a>
+					<a href="/">@IconInbox()<span>Reader</span></a>
+					<a href="/feeds/manage">@IconPlus()<span>Feeds</span></a>
+					<a href="/boards">@IconKanban()<span>Boards</span></a>
+					<a href="/search">@IconSearch()<span>Search</span></a>
+					<a href="/feed-health">@IconPulse()<span>Health</span></a>
+					<a href="/settings">@IconSettings()<span>Settings</span></a>
 				</nav>
-			</header>
-			{ children... }
+			</aside>
+			<main class="page-main">
+				{ children... }
+			</main>
 		</div>
 	}
 }

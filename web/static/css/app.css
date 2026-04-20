@@ -1168,18 +1168,27 @@ kbd {
 }
 
 .page-shell {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  padding: 0;
+}
+
+.page-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  height: 100vh;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
   padding: 20px;
 }
 
-.page-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  max-width: 1180px;
-  margin: 0 auto 28px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 16px;
+.page-main {
+  min-width: 0;
+  padding: 20px;
 }
 
 .brand-link {
@@ -1190,18 +1199,26 @@ kbd {
 }
 
 .page-nav {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
+  display: grid;
+  gap: 8px;
 }
 
 .page-nav a {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--muted);
-  padding: 9px 11px;
-  font-size: 0.9rem;
+  padding: 8px 10px;
+  font-size: 0.92rem;
+}
+
+.page-nav svg {
+  width: 18px;
+  height: 18px;
 }
 
 .page-nav a:hover {
@@ -1216,7 +1233,7 @@ kbd {
 .search-layout,
 .health-grid,
 .board-article-list,
-.page-shell > .panel {
+.page-main > .panel {
   max-width: 1180px;
   margin-left: auto;
   margin-right: auto;
@@ -1770,7 +1787,7 @@ mark {
     padding-top: 34px;
   }
 
-  .page-topbar,
+  .page-shell,
   .management-grid,
   .settings-grid,
   .health-grid {
@@ -1778,8 +1795,19 @@ mark {
     grid-template-columns: 1fr;
   }
 
+  .page-sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .page-main {
+    padding: 16px;
+  }
+
   .page-nav {
-    justify-content: flex-start;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .table-row {

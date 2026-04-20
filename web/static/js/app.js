@@ -22,6 +22,9 @@
   if (storedTheme) {
     root.dataset.theme = storedTheme;
   }
+  if (shell && sessionStorage.getItem("readress-sidebar-open") === "1") {
+    shell.classList.add("sidebar-open");
+  }
   syncThemeLogos();
   applyArticleView(localStorage.getItem("readress-view") || "magazine");
 
@@ -40,10 +43,12 @@
 
   function openSidebar() {
     shell?.classList.add("sidebar-open");
+    sessionStorage.setItem("readress-sidebar-open", "1");
   }
 
   function closeSidebar() {
     shell?.classList.remove("sidebar-open");
+    sessionStorage.setItem("readress-sidebar-open", "0");
   }
 
   function openHelp() {
