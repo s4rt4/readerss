@@ -38,6 +38,7 @@ type HomeData struct {
 	ReadLater  int64
 	Errors     int
 	Filter     string
+	Density    string
 }
 
 type FeedManagementData struct {
@@ -208,6 +209,15 @@ func articleState(article ArticleView, active bool) string {
 
 func filterSelected(filter, current string) bool {
 	return filter == current
+}
+
+func densityClass(density string) string {
+	switch density {
+	case "comfortable", "compact":
+		return "density-" + density
+	default:
+		return "density-balanced"
+	}
 }
 
 func navState(filter, current string) string {

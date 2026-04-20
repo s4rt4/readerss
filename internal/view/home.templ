@@ -4,7 +4,7 @@ import "fmt"
 
 templ Home(data HomeData) {
 	@Layout("ReadeRSS") {
-		<div class="app-shell" data-app-shell>
+		<div class={ "app-shell " + densityClass(data.Density) } data-app-shell>
 			<aside class="sidebar" data-sidebar>
 				<div class="brand-bar">
 					<div class="brand-identity">
@@ -79,10 +79,14 @@ templ Home(data HomeData) {
 				<div class="nav-section">
 					<div class="section-title">
 						<span>Categories</span>
-						<button class="icon-button subtle" type="button" aria-label="Add category" title="Add category">
+						<button class="icon-button subtle" type="button" data-toggle-category-form aria-label="Add category" title="Add category" aria-expanded="false">
 							@IconPlus()
 						</button>
 					</div>
+					<form class="sidebar-mini-form" action="/categories" method="post" data-category-form hidden>
+						<input name="name" type="text" placeholder="New category" aria-label="New category name"/>
+						<button class="icon-button filled" type="submit" aria-label="Save category" title="Save category">@IconCheckCircle()</button>
+					</form>
 					for i, category := range data.Categories {
 						<a class="nav-item" href={ fmt.Sprintf("/?filter=category:%d", category.ID) }>
 							<span class={ categoryDotClass(i) }></span>
@@ -91,6 +95,23 @@ templ Home(data HomeData) {
 						</a>
 					}
 				</div>
+				if len(data.Boards) > 0 {
+					<div class="nav-section">
+						<div class="section-title">
+							<span>Boards</span>
+							<a class="icon-button subtle" href="/boards" aria-label="Manage boards" title="Manage boards">
+								@IconPlus()
+							</a>
+						</div>
+						for _, board := range data.Boards {
+							<a class={ "nav-item " + navState(data.Filter, fmt.Sprintf("board:%d", board.ID)) } href={ fmt.Sprintf("/?filter=board:%d", board.ID) }>
+								<span class="nav-icon">@IconKanban()</span>
+								<span>{ board.Name }</span>
+								<strong>{ board.Count }</strong>
+							</a>
+						}
+					</div>
+				}
 				<div class="nav-section feeds">
 					<div class="section-title">
 						<span>Feeds</span>
@@ -131,17 +152,12 @@ templ Home(data HomeData) {
 					<button class="icon-button mobile-only" type="button" data-open-sidebar aria-label="Open sidebar" title="Open sidebar">
 						@IconMenu()
 					</button>
-					<div class="search-box">
+					<form class="search-box" action="/search" method="get">
 						@IconSearch()
-						<input id="search" type="search" placeholder="Search articles" data-search-input/>
-					</div>
+						<input id="search" name="q" type="search" placeholder="Search articles" data-search-input/>
+						<button class="search-submit" type="submit" aria-label="Search" title="Search">@IconSearch()</button>
+					</form>
 					<div class="topbar-actions">
-						<div class="segmented" aria-label="Article filter">
-							<a class={ templ.KV("selected", filterSelected(data.Filter, "unread")) } href="/?filter=unread">Unread</a>
-							<a class={ templ.KV("selected", filterSelected(data.Filter, "all")) } href="/?filter=all">All</a>
-							<a class={ templ.KV("selected", filterSelected(data.Filter, "starred")) } href="/?filter=starred">Starred</a>
-							<a class={ templ.KV("selected", filterSelected(data.Filter, "read-later")) } href="/?filter=read-later">Later</a>
-						</div>
 						<div class="view-menu" data-view-menu>
 							<button class="icon-button" type="button" data-view-menu-trigger aria-label="Change view" title="Change view" aria-haspopup="true" aria-expanded="false">
 								@IconLayoutList()
@@ -169,7 +185,7 @@ templ Home(data HomeData) {
 								</button>
 							</div>
 						</div>
-						<form action="/articles/mark-all-read" method="post">
+						<form action="/articles/mark-all-read" method="post" data-loading-label="Marking">
 							<button class="icon-button" type="submit" aria-label="Mark all as read" title="Mark all as read">
 								@IconCheckCircle()
 							</button>
@@ -212,7 +228,7 @@ templ Home(data HomeData) {
 								<p class="eyebrow">Unread</p>
 								<h2>Today</h2>
 							</div>
-							<form action="/feeds/refresh" method="post" data-refresh-form>
+							<form action="/feeds/refresh" method="post" data-refresh-form data-loading-label="Refreshing">
 								<button class="text-button" type="submit">
 									@IconRefresh()
 									<span>Refresh</span>
@@ -280,7 +296,7 @@ templ Home(data HomeData) {
 						<header class="article-header">
 							if len(data.Articles) == 0 {
 								<p class="tag" data-detail-tag>Ready</p>
-								<h2 data-detail-title>No article selected</h2>
+								<h2><a data-detail-title data-detail-link href="#">No article selected</a></h2>
 								<p data-detail-summary>Add feeds and refresh them to start reading real articles.</p>
 							} else {
 								if data.Articles[0].ImageURL != "" {
@@ -289,7 +305,7 @@ templ Home(data HomeData) {
 									<img class="article-hero-image" data-detail-image src="" alt="" hidden/>
 								}
 								<p class="tag" data-detail-tag>{ data.Articles[0].Category }</p>
-								<h2 data-detail-title>{ data.Articles[0].Title }</h2>
+								<h2><a data-detail-title data-detail-link href={ data.Articles[0].URL } target="_blank" rel="noreferrer">{ data.Articles[0].Title }</a></h2>
 								<p data-detail-summary>{ data.Articles[0].Summary }</p>
 							}
 						</header>

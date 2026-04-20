@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/a-h/templ"
@@ -23,12 +24,19 @@ import (
 )
 
 type App struct {
-	db         *sql.DB
-	queries    *sqlc.Queries
-	fetcher    *service.FeedFetcher
-	logger     *slog.Logger
-	userID     int64
-	sessionKey []byte
+	db            *sql.DB
+	queries       *sqlc.Queries
+	fetcher       *service.FeedFetcher
+	logger        *slog.Logger
+	userID        int64
+	sessionKey    []byte
+	loginAttempts map[string]loginAttempt
+	loginMu       sync.Mutex
+}
+
+type loginAttempt struct {
+	Count      int
+	WindowEnds time.Time
 }
 
 type opmlDocument struct {
@@ -58,12 +66,13 @@ type opmlOutline struct {
 func NewApp(db *sql.DB, logger *slog.Logger, userID int64) *App {
 	queries := sqlc.New(db)
 	return &App{
-		db:         db,
-		queries:    queries,
-		fetcher:    service.NewFeedFetcher(queries),
-		logger:     logger,
-		userID:     userID,
-		sessionKey: []byte(firstNonEmpty(os.Getenv("READRESS_SESSION_KEY"), "readress-local-dev-session-key-change-me")),
+		db:            db,
+		queries:       queries,
+		fetcher:       service.NewFeedFetcher(queries),
+		logger:        logger,
+		userID:        userID,
+		sessionKey:    []byte(firstNonEmpty(os.Getenv("READRESS_SESSION_KEY"), "readress-local-dev-session-key-change-me")),
+		loginAttempts: map[string]loginAttempt{},
 	}
 }
 
@@ -82,6 +91,7 @@ func (a *App) Routes(r chi.Router) {
 		protected.Post("/feeds/{id}/delete", a.deleteFeed)
 		protected.Post("/feeds/{id}/refresh", a.refreshFeed)
 		protected.Post("/feeds/{id}/mark-read", a.markFeedRead)
+		protected.Post("/categories", a.createCategory)
 		protected.Post("/categories/{id}/mark-read", a.markCategoryRead)
 		protected.Post("/articles/{id}/read", a.markArticleRead)
 		protected.Post("/articles/{id}/unread", a.markArticleUnread)
@@ -127,6 +137,10 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
+	if !a.allowLoginAttempt(r) {
+		http.Redirect(w, r, "/login?error=Too+many+login+attempts.+Try+again+in+one+minute.", http.StatusSeeOther)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/login?error=Could+not+read+login+form.", http.StatusSeeOther)
 		return
@@ -135,9 +149,11 @@ func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
 	password := r.PostForm.Get("password")
 	user, err := a.queries.GetUserByUsername(r.Context(), username)
 	if err != nil || !validPassword(user.PasswordHash, password) {
+		a.recordLoginFailure(r)
 		http.Redirect(w, r, "/login?error=Invalid+username+or+password.", http.StatusSeeOther)
 		return
 	}
+	a.clearLoginAttempts(r)
 	a.setSession(w, user.ID, r.PostForm.Get("remember") == "1")
 	target := r.PostForm.Get("next")
 	if target == "" || !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
@@ -263,6 +279,38 @@ func (a *App) deleteFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.redirectFeedManage(w, r, "", "Feed deleted.")
+}
+
+func (a *App) createCategory(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		redirectBack(w, r)
+		return
+	}
+	name := strings.TrimSpace(r.PostForm.Get("name"))
+	if name == "" {
+		redirectBack(w, r)
+		return
+	}
+	categories, err := a.queries.ListCategories(r.Context(), a.userID)
+	if err != nil {
+		a.serverError(w, "list categories", err)
+		return
+	}
+	for _, category := range categories {
+		if strings.EqualFold(category.Name, name) {
+			redirectBack(w, r)
+			return
+		}
+	}
+	if _, err := a.queries.CreateCategory(r.Context(), sqlc.CreateCategoryParams{
+		UserID:    a.userID,
+		Name:      name,
+		SortOrder: int64(len(categories) + 1),
+	}); err != nil {
+		a.serverError(w, "create category", err)
+		return
+	}
+	redirectBack(w, r)
 }
 
 func (a *App) refreshFeed(w http.ResponseWriter, r *http.Request) {
@@ -611,13 +659,14 @@ func (a *App) homeData(r *http.Request) (view.HomeData, error) {
 	all, _ := a.queries.CountAllArticles(r.Context(), a.userID)
 	starred, _ := a.queries.CountStarredArticles(r.Context(), a.userID)
 	readLater, _ := a.queries.CountReadLaterArticles(r.Context(), a.userID)
+	settings, _ := a.readerSettings(r)
 	errors := 0
 	for _, feed := range feeds {
 		if feed.StatusTone == "error" {
 			errors++
 		}
 	}
-	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter}, nil
+	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter, Density: settings.Density}, nil
 }
 
 func (a *App) boardsData(r *http.Request, notice, formError string) (view.BoardsData, error) {
@@ -643,22 +692,9 @@ func (a *App) feedManagementData(r *http.Request, form view.FeedFormData, formEr
 }
 
 func (a *App) settingsData(r *http.Request, notice, formError string) (view.SettingsData, error) {
-	settings, err := a.queries.GetReaderSettings(r.Context(), a.userID)
+	settings, err := a.readerSettings(r)
 	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return view.SettingsData{}, err
-		}
-		settings, err = a.queries.UpsertReaderSettings(r.Context(), sqlc.UpsertReaderSettingsParams{
-			UserID:                      a.userID,
-			DefaultFetchIntervalMinutes: 60,
-			RetentionDays:               90,
-			Theme:                       "system",
-			Density:                     "balanced",
-			RespectCacheHeaders:         1,
-		})
-		if err != nil {
-			return view.SettingsData{}, err
-		}
+		return view.SettingsData{}, err
 	}
 	_, feeds, err := a.loadLibrary(r)
 	if err != nil {
@@ -675,6 +711,24 @@ func (a *App) settingsData(r *http.Request, notice, formError string) (view.Sett
 		Notice:               notice,
 		Error:                formError,
 	}, nil
+}
+
+func (a *App) readerSettings(r *http.Request) (sqlc.ReaderSetting, error) {
+	settings, err := a.queries.GetReaderSettings(r.Context(), a.userID)
+	if err == nil {
+		return settings, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return sqlc.ReaderSetting{}, err
+	}
+	return a.queries.UpsertReaderSettings(r.Context(), sqlc.UpsertReaderSettingsParams{
+		UserID:                      a.userID,
+		DefaultFetchIntervalMinutes: 60,
+		RetentionDays:               90,
+		Theme:                       "system",
+		Density:                     "balanced",
+		RespectCacheHeaders:         1,
+	})
 }
 
 func (a *App) feedHealthData(r *http.Request) (view.FeedHealthData, error) {
@@ -871,6 +925,17 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 		if strings.HasPrefix(filter, "category:") {
 			categoryID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "category:"), 10, 64)
 			rows, err := a.queries.ListRecentArticlesByCategory(r.Context(), sqlc.ListRecentArticlesByCategoryParams{UserID: a.userID, CategoryID: nullInt64(categoryID), Limit: 50, Offset: 0})
+			if err != nil {
+				return nil, err
+			}
+			for _, row := range rows {
+				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
+			}
+			return articles, nil
+		}
+		if strings.HasPrefix(filter, "board:") {
+			boardID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "board:"), 10, 64)
+			rows, err := a.queries.ListBoardArticles(r.Context(), sqlc.ListBoardArticlesParams{ID: boardID, UserID: a.userID, Limit: 50, Offset: 0})
 			if err != nil {
 				return nil, err
 			}
@@ -1313,7 +1378,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func normalizeArticleFilter(value string) string {
-	if strings.HasPrefix(value, "feed:") || strings.HasPrefix(value, "category:") {
+	if strings.HasPrefix(value, "feed:") || strings.HasPrefix(value, "category:") || strings.HasPrefix(value, "board:") {
 		return value
 	}
 	switch value {
@@ -1345,6 +1410,49 @@ func redirectBack(w http.ResponseWriter, r *http.Request) {
 		target = "/"
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (a *App) allowLoginAttempt(r *http.Request) bool {
+	key := clientKey(r)
+	now := time.Now()
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	attempt := a.loginAttempts[key]
+	if now.After(attempt.WindowEnds) {
+		return true
+	}
+	return attempt.Count < 5
+}
+
+func (a *App) recordLoginFailure(r *http.Request) {
+	key := clientKey(r)
+	now := time.Now()
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	attempt := a.loginAttempts[key]
+	if now.After(attempt.WindowEnds) {
+		attempt = loginAttempt{WindowEnds: now.Add(time.Minute)}
+	}
+	attempt.Count++
+	a.loginAttempts[key] = attempt
+}
+
+func (a *App) clearLoginAttempts(r *http.Request) {
+	key := clientKey(r)
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	delete(a.loginAttempts, key)
+}
+
+func clientKey(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	host, _, found := strings.Cut(r.RemoteAddr, ":")
+	if found && host != "" {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func highlightSnippet(value, query string) string {

@@ -12,6 +12,7 @@
     time: document.querySelector("[data-detail-time]"),
     tag: document.querySelector("[data-detail-tag]"),
     title: document.querySelector("[data-detail-title]"),
+    link: document.querySelector("[data-detail-link]"),
     summary: document.querySelector("[data-detail-summary]"),
     body: document.querySelector("[data-detail-body]"),
     image: document.querySelector("[data-detail-image]"),
@@ -108,6 +109,7 @@
     const tag = row.dataset.tag || "";
     const summary = row.dataset.summary || "";
     const image = row.dataset.image || "";
+    const url = row.dataset.url || "#";
     let paragraphs = [summary];
     try {
       const parsed = JSON.parse(row.dataset.content || "[]");
@@ -122,6 +124,9 @@
     detail.time.textContent = time;
     detail.tag.textContent = tag;
     detail.title.textContent = title;
+    if (detail.link) {
+      detail.link.href = url || "#";
+    }
     detail.summary.textContent = summary;
     if (detail.image) {
       if (image) {
@@ -155,6 +160,18 @@
   });
   document.querySelector("[data-open-help]")?.addEventListener("click", openHelp);
   document.querySelector("[data-close-help]")?.addEventListener("click", closeHelp);
+  document.querySelector("[data-toggle-category-form]")?.addEventListener("click", function (event) {
+    const form = document.querySelector("[data-category-form]");
+    if (!form) {
+      return;
+    }
+    const willOpen = form.hidden;
+    form.hidden = !willOpen;
+    event.currentTarget.setAttribute("aria-expanded", String(willOpen));
+    if (willOpen) {
+      form.querySelector("input")?.focus();
+    }
+  });
   viewMenuTrigger?.addEventListener("click", function (event) {
     event.stopPropagation();
     if (viewPopover?.hidden) {
@@ -192,6 +209,32 @@
       closeBoardPopovers(popover);
       popover.hidden = !willOpen;
       trigger.setAttribute("aria-expanded", String(willOpen));
+    });
+  });
+
+  document.querySelectorAll("form[data-confirm]").forEach((form) => {
+    form.addEventListener("submit", function (event) {
+      if (!window.confirm(form.dataset.confirm || "Continue?")) {
+        event.preventDefault();
+      }
+    });
+  });
+
+  document.querySelectorAll("form[data-loading-label]").forEach((form) => {
+    form.addEventListener("submit", function () {
+      const button = form.querySelector("button[type='submit']");
+      if (!button) {
+        return;
+      }
+      button.disabled = true;
+      button.classList.add("is-loading");
+      const label = form.dataset.loadingLabel || "Working";
+      const textSpan = button.querySelector("span");
+      if (textSpan) {
+        textSpan.textContent = label;
+      } else {
+        button.setAttribute("aria-label", label);
+      }
     });
   });
 

@@ -525,7 +525,7 @@ func BoardRow(board BoardView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" method=\"post\"><button class=\"icon-button danger\" type=\"submit\" aria-label=\"Delete board\" title=\"Delete board\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" method=\"post\" data-confirm=\"Delete this board? Saved board links will be removed.\"><button class=\"icon-button danger\" type=\"submit\" aria-label=\"Delete board\" title=\"Delete board\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -639,7 +639,7 @@ func BoardDetail(data BoardDetailData) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" method=\"post\"><button class=\"text-button danger\" type=\"submit\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" method=\"post\" data-confirm=\"Remove this article from the board?\"><button class=\"text-button danger\" type=\"submit\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -936,7 +936,7 @@ func FeedManagement(data FeedManagementData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</div></form><div class=\"panel\"><div class=\"panel-heading\"><div><h2>Feeds</h2><p>Feeds stored in the local SQLite database.</p></div><form action=\"/feeds/refresh\" method=\"post\"><button class=\"text-button\" type=\"submit\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</div></form><div class=\"panel\"><div class=\"panel-heading\"><div><h2>Feeds</h2><p>Feeds stored in the local SQLite database.</p></div><form action=\"/feeds/refresh\" method=\"post\" data-loading-label=\"Checking\"><button class=\"text-button\" type=\"submit\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1104,7 +1104,7 @@ func FeedManageRow(feed FeedView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" method=\"post\"><button class=\"icon-button\" type=\"submit\" aria-label=\"Refresh feed\" title=\"Refresh feed\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" method=\"post\" data-loading-label=\"Refreshing\"><button class=\"icon-button\" type=\"submit\" aria-label=\"Refresh feed\" title=\"Refresh feed\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1125,7 +1125,7 @@ func FeedManageRow(feed FeedView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" method=\"post\"><button class=\"icon-button\" type=\"submit\" aria-label=\"Mark feed read\" title=\"Mark feed read\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "\" method=\"post\" data-loading-label=\"Marking\"><button class=\"icon-button\" type=\"submit\" aria-label=\"Mark feed read\" title=\"Mark feed read\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1167,7 +1167,7 @@ func FeedManageRow(feed FeedView) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "\" method=\"post\"><button class=\"icon-button danger\" type=\"submit\" aria-label=\"Delete feed\" title=\"Delete feed\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "\" method=\"post\" data-confirm=\"Delete this feed and its articles?\"><button class=\"icon-button danger\" type=\"submit\" aria-label=\"Delete feed\" title=\"Delete feed\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1572,7 +1572,7 @@ func Settings(data SettingsData) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "\" method=\"post\"><button class=\"icon-button danger\" type=\"submit\" aria-label=\"Delete rule\" title=\"Delete rule\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "\" method=\"post\" data-confirm=\"Delete this filter rule?\"><button class=\"icon-button danger\" type=\"submit\" aria-label=\"Delete rule\" title=\"Delete rule\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -1594,7 +1594,7 @@ func Settings(data SettingsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "</div><div class=\"button-row\"><form action=\"/settings/opml/import\" method=\"post\" enctype=\"multipart/form-data\" class=\"opml-import-form\"><label class=\"file-button\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "</div><div class=\"button-row\"><form action=\"/settings/opml/import\" method=\"post\" enctype=\"multipart/form-data\" class=\"opml-import-form\" data-loading-label=\"Importing\"><label class=\"file-button\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1909,7 +1909,7 @@ func FeedHealth(data FeedHealthData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "</section><section class=\"panel\"><div class=\"panel-heading\"><div><h2>Feed Status</h2><p>Diagnostics from feeds stored in SQLite.</p></div><form action=\"/feeds/refresh\" method=\"post\"><button class=\"text-button\" type=\"submit\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "</section><section class=\"panel\"><div class=\"panel-heading\"><div><h2>Feed Status</h2><p>Diagnostics from feeds stored in SQLite.</p></div><form action=\"/feeds/refresh\" method=\"post\" data-loading-label=\"Refreshing\"><button class=\"text-button\" type=\"submit\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

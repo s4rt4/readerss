@@ -148,7 +148,7 @@ templ BoardRow(board BoardView) {
 		<span class="pill">{ fmt.Sprint(board.Count) } articles</span>
 		<div class="row-tools">
 			<a class="icon-button" href={ boardLink(board) } aria-label="Open board" title="Open board">@IconExternal()</a>
-			<form action={ boardDeleteAction(board) } method="post">
+			<form action={ boardDeleteAction(board) } method="post" data-confirm="Delete this board? Saved board links will be removed.">
 				<button class="icon-button danger" type="submit" aria-label="Delete board" title="Delete board">@IconTrash()</button>
 			</form>
 		</div>
@@ -177,7 +177,7 @@ templ BoardDetail(data BoardDetailData) {
 					for _, article := range data.Articles {
 						<div class="board-article-card">
 							@ArticleRow(article, data.Boards, false)
-							<form action={ boardRemoveArticleAction(data.Board, article) } method="post">
+							<form action={ boardRemoveArticleAction(data.Board, article) } method="post" data-confirm="Remove this article from the board?">
 								<button class="text-button danger" type="submit">@IconTrash()<span>Remove from board</span></button>
 							</form>
 						</div>
@@ -259,7 +259,7 @@ templ FeedManagement(data FeedManagementData) {
 						<h2>Feeds</h2>
 						<p>Feeds stored in the local SQLite database.</p>
 					</div>
-					<form action="/feeds/refresh" method="post">
+					<form action="/feeds/refresh" method="post" data-loading-label="Checking">
 						<button class="text-button" type="submit">@IconRefresh()<span>Check all</span></button>
 					</form>
 				</div>
@@ -291,14 +291,14 @@ templ FeedManageRow(feed FeedView) {
 		<span class="pill">{ feed.Category }</span>
 		<span class={ "status-pill " + feed.StatusTone }>{ feed.Status }</span>
 		<div class="row-tools">
-			<form action={ fmt.Sprintf("/feeds/%d/refresh", feed.ID) } method="post">
+			<form action={ fmt.Sprintf("/feeds/%d/refresh", feed.ID) } method="post" data-loading-label="Refreshing">
 				<button class="icon-button" type="submit" aria-label="Refresh feed" title="Refresh feed">@IconRefresh()</button>
 			</form>
-			<form action={ fmt.Sprintf("/feeds/%d/mark-read", feed.ID) } method="post">
+			<form action={ fmt.Sprintf("/feeds/%d/mark-read", feed.ID) } method="post" data-loading-label="Marking">
 				<button class="icon-button" type="submit" aria-label="Mark feed read" title="Mark feed read">@IconCheckCircle()</button>
 			</form>
 			<a class="icon-button" href={ fmt.Sprintf("/feeds/%d/edit", feed.ID) } aria-label="Edit feed" title="Edit feed">@IconSettings()</a>
-			<form action={ fmt.Sprintf("/feeds/%d/delete", feed.ID) } method="post">
+			<form action={ fmt.Sprintf("/feeds/%d/delete", feed.ID) } method="post" data-confirm="Delete this feed and its articles?">
 				<button class="icon-button danger" type="submit" aria-label="Delete feed" title="Delete feed">@IconTrash()</button>
 			</form>
 		</div>
@@ -430,7 +430,7 @@ templ Settings(data SettingsData) {
 									<strong>{ rule.Pattern }</strong>
 									<small>{ rule.MatchType } · { rule.Action } · { rule.FeedTitle }</small>
 								</div>
-								<form action={ fmt.Sprintf("/settings/filter-rules/%d/delete", rule.ID) } method="post">
+								<form action={ fmt.Sprintf("/settings/filter-rules/%d/delete", rule.ID) } method="post" data-confirm="Delete this filter rule?">
 									<button class="icon-button danger" type="submit" aria-label="Delete rule" title="Delete rule">@IconTrash()</button>
 								</form>
 							</div>
@@ -447,7 +447,7 @@ templ Settings(data SettingsData) {
 					@IconArchive()
 				</div>
 				<div class="button-row">
-					<form action="/settings/opml/import" method="post" enctype="multipart/form-data" class="opml-import-form">
+					<form action="/settings/opml/import" method="post" enctype="multipart/form-data" class="opml-import-form" data-loading-label="Importing">
 						<label class="file-button">
 							@IconUpload()
 							<span>Import OPML</span>
@@ -526,7 +526,7 @@ templ FeedHealth(data FeedHealthData) {
 					<h2>Feed Status</h2>
 					<p>Diagnostics from feeds stored in SQLite.</p>
 				</div>
-				<form action="/feeds/refresh" method="post">
+				<form action="/feeds/refresh" method="post" data-loading-label="Refreshing">
 					<button class="text-button" type="submit">@IconRefresh()<span>Refresh now</span></button>
 				</form>
 			</div>
