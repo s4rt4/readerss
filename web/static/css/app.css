@@ -109,7 +109,24 @@ svg {
   gap: 18px;
   border-right: 1px solid var(--line);
   background: var(--panel);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
+}
+
+.sidebar,
+.page-sidebar,
+.feeds {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar::-webkit-scrollbar,
+.page-sidebar::-webkit-scrollbar,
+.feeds::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .brand-bar,
@@ -384,7 +401,6 @@ h1 {
 
 .feeds {
   min-height: 0;
-  overflow: auto;
 }
 
 .sidebar-empty {
@@ -1183,6 +1199,9 @@ kbd {
   gap: 18px;
   border-right: 1px solid var(--line);
   background: var(--panel);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
 }
 
