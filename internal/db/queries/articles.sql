@@ -203,6 +203,18 @@ INSERT OR IGNORE INTO articles (
 RETURNING id, feed_id, guid, url, title, author, content, excerpt, image_url, published_at,
           created_at, is_read, is_starred, is_read_later;
 
+-- name: UpdateArticleFromFeed :exec
+UPDATE articles
+SET url = ?,
+    title = ?,
+    author = ?,
+    content = ?,
+    excerpt = ?,
+    image_url = COALESCE(?, image_url),
+    published_at = COALESCE(?, published_at)
+WHERE feed_id = ?
+  AND guid = ?;
+
 -- name: MarkArticleRead :exec
 UPDATE articles
 SET is_read = ?

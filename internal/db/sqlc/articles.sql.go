@@ -1043,3 +1043,43 @@ func (q *Queries) StarArticle(ctx context.Context, arg StarArticleParams) error 
 	_, err := q.db.ExecContext(ctx, starArticle, arg.IsStarred, arg.ID, arg.UserID)
 	return err
 }
+
+const updateArticleFromFeed = `-- name: UpdateArticleFromFeed :exec
+UPDATE articles
+SET url = ?,
+    title = ?,
+    author = ?,
+    content = ?,
+    excerpt = ?,
+    image_url = COALESCE(?, image_url),
+    published_at = COALESCE(?, published_at)
+WHERE feed_id = ?
+  AND guid = ?
+`
+
+type UpdateArticleFromFeedParams struct {
+	Url         string         `json:"url"`
+	Title       string         `json:"title"`
+	Author      sql.NullString `json:"author"`
+	Content     sql.NullString `json:"content"`
+	Excerpt     sql.NullString `json:"excerpt"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullTime   `json:"published_at"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+}
+
+func (q *Queries) UpdateArticleFromFeed(ctx context.Context, arg UpdateArticleFromFeedParams) error {
+	_, err := q.db.ExecContext(ctx, updateArticleFromFeed,
+		arg.Url,
+		arg.Title,
+		arg.Author,
+		arg.Content,
+		arg.Excerpt,
+		arg.ImageUrl,
+		arg.PublishedAt,
+		arg.FeedID,
+		arg.Guid,
+	)
+	return err
+}

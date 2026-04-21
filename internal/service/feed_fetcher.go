@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/mmcdole/gofeed"
 
 	"readress/internal/db/sqlc"
@@ -188,6 +189,19 @@ func (f *FeedFetcher) FetchFeed(ctx context.Context, userID, feedID int64) (Fetc
 		created, err := f.queries.CreateArticle(ctx, article)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
+				if err := f.queries.UpdateArticleFromFeed(ctx, sqlc.UpdateArticleFromFeedParams{
+					Url:         article.Url,
+					Title:       article.Title,
+					Author:      article.Author,
+					Content:     article.Content,
+					Excerpt:     article.Excerpt,
+					ImageUrl:    article.ImageUrl,
+					PublishedAt: article.PublishedAt,
+					FeedID:      article.FeedID,
+					Guid:        article.Guid,
+				}); err != nil {
+					return result, fmt.Errorf("update article %q: %w", article.Title, err)
+				}
 				result.Skipped++
 				continue
 			}
@@ -222,7 +236,7 @@ func (f *FeedFetcher) fetchArticleExtras(ctx context.Context, articleURL string)
 		return "", ""
 	}
 	htmlValue := string(body)
-	return ReadableText(htmlValue), absoluteURL(articleURL, firstNonEmpty(extractMetaImage(htmlValue), extractFirstImage(htmlValue)))
+	return ReadableArticleText(htmlValue), absoluteURL(articleURL, firstNonEmpty(extractMetaImage(htmlValue), extractFirstImage(htmlValue)))
 }
 
 func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, feedID int64, articleURL, titleValue string, contentValue sql.NullString) error {
@@ -424,13 +438,88 @@ func ReadableText(value string) string {
 	clean := make([]string, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line != "" {
+		if line != "" && !isBoilerplateLine(line) {
 			clean = append(clean, line)
 		}
 	}
 	value = strings.Join(clean, "\n\n")
 	value = newlineRE.ReplaceAllString(value, "\n\n")
 	return strings.TrimSpace(value)
+}
+
+func ReadableArticleText(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(value))
+	if err != nil {
+		return ReadableText(value)
+	}
+	doc.Find(strings.Join([]string{
+		"script", "style", "noscript", "iframe", "svg", "nav", "header", "footer", "aside", "form", "button",
+		"[role='navigation']", "[role='banner']", "[role='contentinfo']", "[aria-hidden='true']",
+		"[class*='nav']", "[class*='menu']", "[class*='header']", "[class*='footer']", "[class*='sidebar']",
+		"[class*='newsletter']", "[class*='subscribe']", "[class*='cookie']", "[class*='breadcrumb']",
+		"[id*='nav']", "[id*='menu']", "[id*='header']", "[id*='footer']", "[id*='sidebar']",
+		"[id*='newsletter']", "[id*='subscribe']", "[id*='cookie']", "[id*='breadcrumb']",
+	}, ",")).Remove()
+
+	best := ""
+	bestScore := 0
+	for _, selector := range []string{
+		"article [itemprop='articleBody']",
+		"[itemprop='articleBody']",
+		"article",
+		"main article",
+		"main",
+		"[role='main']",
+		".article-body",
+		".post-content",
+		".entry-content",
+		".content",
+	} {
+		doc.Find(selector).Each(func(_ int, selection *goquery.Selection) {
+			htmlValue, err := selection.Html()
+			if err != nil {
+				return
+			}
+			text := ReadableText(htmlValue)
+			score := readableScore(text)
+			if score > bestScore {
+				best = text
+				bestScore = score
+			}
+		})
+	}
+	if bestScore >= 40 {
+		return best
+	}
+	bodyHTML, err := doc.Find("body").Html()
+	if err != nil || strings.TrimSpace(bodyHTML) == "" {
+		return ReadableText(value)
+	}
+	return ReadableText(bodyHTML)
+}
+
+func readableScore(value string) int {
+	score := 0
+	for _, field := range strings.Fields(value) {
+		if len([]rune(field)) > 1 {
+			score++
+		}
+	}
+	return score
+}
+
+func isBoilerplateLine(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.Trim(normalized, ".:|-/")
+	switch normalized {
+	case "skip to main content", "open menu", "sign in", "sign out", "view profile", "search", "subscribe":
+		return true
+	}
+	return false
 }
 
 func oneLine(value string) string {

@@ -52,6 +52,7 @@ type Querier interface {
 	SearchArticles(ctx context.Context, arg SearchArticlesParams) ([]SearchArticlesRow, error)
 	SetArticleReadLater(ctx context.Context, arg SetArticleReadLaterParams) error
 	StarArticle(ctx context.Context, arg StarArticleParams) error
+	UpdateArticleFromFeed(ctx context.Context, arg UpdateArticleFromFeedParams) error
 	UpdateFeed(ctx context.Context, arg UpdateFeedParams) (Feed, error)
 	UpdateFeedFetchError(ctx context.Context, arg UpdateFeedFetchErrorParams) error
 	UpdateFeedFetchSuccess(ctx context.Context, arg UpdateFeedFetchSuccessParams) error
