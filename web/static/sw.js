@@ -1,7 +1,7 @@
-const CACHE_NAME = "readress-v3";
+const CACHE_NAME = "readress-v4";
 const STATIC_ASSETS = [
-  "/static/css/app.css",
-  "/static/js/app.js",
+  "/static/css/app.css?v=20260421-views",
+  "/static/js/app.js?v=20260421-views",
   "/static/img/readerss_favicon.svg",
   "/static/img/readerss_logo.svg",
   "/static/img/readerss_logo_dark.svg",
