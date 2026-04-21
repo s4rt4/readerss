@@ -5,6 +5,12 @@ import "fmt"
 templ Home(data HomeData) {
 	@Layout("ReadeRSS") {
 		<div class={ "app-shell " + densityClass(data.Density) } data-app-shell>
+			if data.Notice != "" {
+				<div class="toast" data-toast role="status" aria-live="polite">
+					@IconCheckCircle()
+					<span>{ data.Notice }</span>
+				</div>
+			}
 			<aside class="sidebar" data-sidebar>
 				<div class="brand-bar">
 					<div class="brand-identity">
@@ -235,9 +241,9 @@ templ Home(data HomeData) {
 								</button>
 							</form>
 						</div>
-						<div class="article-list" data-article-list>
+						<ul class="article-list" data-article-list aria-label="Articles">
 							if len(data.Articles) == 0 {
-								<div class="empty-panel">
+								<li class="empty-panel">
 									@IconInbox()
 									<strong>No articles yet</strong>
 									<p>Add a feed or refresh your existing feeds to pull articles into ReadeRSS.</p>
@@ -245,19 +251,23 @@ templ Home(data HomeData) {
 										@IconPlus()
 										<span>Manage feeds</span>
 									</a>
-								</div>
+								</li>
 							} else {
 								for i, article := range data.Articles {
-									@ArticleRow(article, data.Boards, i == 0)
+									<li class="article-list-item">
+										@ArticleRow(article, data.Boards, i == 0)
+									</li>
 								}
 								if data.HasMore {
-									<a class="load-more-link" href={ nextArticlesURL(data.Filter, data.NextOffset) }>
-										<span>Next page</span>
-										@IconArrowLeft()
-									</a>
+									<li class="load-more-item">
+										<a class="load-more-link" href={ nextArticlesURL(data.Filter, data.NextOffset) }>
+											<span>Next page</span>
+											@IconArrowLeft()
+										</a>
+									</li>
 								}
 							}
-						</div>
+						</ul>
 					</div>
 					<article class="detail-pane" data-detail-pane data-mobile-detail>
 						<div class="article-toolbar">

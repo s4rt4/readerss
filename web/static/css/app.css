@@ -697,7 +697,9 @@ h1 {
 .article-list {
   display: grid;
   gap: 10px;
+  margin: 0;
   padding: 14px;
+  list-style: none;
 }
 
 .app-shell.density-comfortable .article-list {
@@ -827,6 +829,14 @@ h1 {
   background: var(--panel);
   color: var(--muted);
   font-weight: 800;
+}
+
+.load-more-item {
+  display: grid;
+}
+
+.article-list-item {
+  display: grid;
 }
 
 .load-more-link svg {
@@ -1020,6 +1030,36 @@ button.is-loading {
 
 button.is-loading svg {
   animation: spin 900ms linear infinite;
+}
+
+.toast {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 120;
+  display: inline-flex;
+  max-width: min(420px, calc(100vw - 36px));
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--line));
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.toast svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.toast.is-hiding {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 @keyframes spin {

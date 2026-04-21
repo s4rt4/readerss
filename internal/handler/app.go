@@ -41,6 +41,12 @@ type loginAttempt struct {
 	WindowEnds time.Time
 }
 
+type opmlImportStats struct {
+	Imported int
+	Skipped  int
+	Failed   int
+}
+
 type opmlDocument struct {
 	XMLName xml.Name `xml:"opml"`
 	Version string   `xml:"version,attr"`
@@ -172,7 +178,7 @@ func (a *App) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) feedManagement(w http.ResponseWriter, r *http.Request) {
-	data, err := a.feedManagementData(r, view.FeedFormData{Interval: 60}, r.URL.Query().Get("error"), r.URL.Query().Get("notice"))
+	data, err := a.feedManagementData(r, view.FeedFormData{Interval: 60}, r.URL.Query().Get("error"), firstNonEmpty(r.URL.Query().Get("notice"), r.URL.Query().Get("toast")))
 	if err != nil {
 		a.serverError(w, "load feed management", err)
 		return
@@ -351,10 +357,10 @@ func (a *App) refreshAllFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if failed > 0 {
-		a.redirectFeedManage(w, r, fmt.Sprintf("Refresh finished with %d failed feeds and %d new articles.", failed, inserted), "")
+		redirectBackWithToast(w, r, fmt.Sprintf("Refresh finished: %d new articles, %d failed feeds.", inserted, failed))
 		return
 	}
-	a.redirectFeedManage(w, r, "", fmt.Sprintf("Refresh complete: %d new articles.", inserted))
+	redirectBackWithToast(w, r, fmt.Sprintf("Refresh complete: %d new articles.", inserted))
 }
 
 func (a *App) settings(w http.ResponseWriter, r *http.Request) {
@@ -450,8 +456,8 @@ func (a *App) importOPML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imported, skipped := a.importOPMLOutlines(r, doc.Body.Outlines, "")
-	notice := fmt.Sprintf("OPML import finished: %d feeds added, %d skipped.", imported, skipped)
+	stats := a.importOPMLOutlines(r, doc.Body.Outlines, "")
+	notice := fmt.Sprintf("OPML import finished: %d feeds added, %d skipped, %d failed.", stats.Imported, stats.Skipped, stats.Failed)
 	a.redirectSettings(w, r, notice, "")
 }
 
@@ -732,7 +738,7 @@ func (a *App) homeData(r *http.Request) (view.HomeData, error) {
 			errors++
 		}
 	}
-	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter, Density: settings.Density, Offset: offset, NextOffset: offset + articlePageSize, HasMore: hasMore}, nil
+	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter, Density: settings.Density, Offset: offset, NextOffset: offset + articlePageSize, HasMore: hasMore, Notice: r.URL.Query().Get("toast")}, nil
 }
 
 func (a *App) boardsData(r *http.Request, notice, formError string) (view.BoardsData, error) {
@@ -1248,28 +1254,33 @@ func (a *App) markCategoryRead(w http.ResponseWriter, r *http.Request) {
 	redirectBack(w, r)
 }
 
-func (a *App) importOPMLOutlines(r *http.Request, outlines []opmlOutline, categoryName string) (int, int) {
-	imported := 0
-	skipped := 0
+func (a *App) importOPMLOutlines(r *http.Request, outlines []opmlOutline, categoryName string) opmlImportStats {
+	stats := opmlImportStats{}
 	for _, outline := range outlines {
 		label := firstNonEmpty(outline.Title, outline.Text)
 		if strings.TrimSpace(outline.XMLURL) == "" {
-			childImported, childSkipped := a.importOPMLOutlines(r, outline.Outlines, label)
-			imported += childImported
-			skipped += childSkipped
+			childStats := a.importOPMLOutlines(r, outline.Outlines, label)
+			stats.Imported += childStats.Imported
+			stats.Skipped += childStats.Skipped
+			stats.Failed += childStats.Failed
 			continue
 		}
 
 		feedURL := strings.TrimSpace(outline.XMLURL)
 		parsed, err := url.ParseRequestURI(feedURL)
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			skipped++
+			stats.Failed++
 			continue
 		}
 
 		categoryID := int64(0)
 		if strings.TrimSpace(categoryName) != "" {
-			categoryID, _ = a.findOrCreateCategory(r, categoryName)
+			var err error
+			categoryID, err = a.findOrCreateCategory(r, categoryName)
+			if err != nil {
+				stats.Failed++
+				continue
+			}
 		}
 		title := strings.TrimSpace(label)
 		if title == "" {
@@ -1286,15 +1297,16 @@ func (a *App) importOPMLOutlines(r *http.Request, outlines []opmlOutline, catego
 			FetchIntervalMinutes: 60,
 		})
 		if err != nil {
-			skipped++
+			stats.Skipped++
 			continue
 		}
-		imported++
+		stats.Imported++
 		if _, err := a.fetcher.FetchFeed(r.Context(), a.userID, feed.ID); err != nil {
 			a.logger.Warn("opml feed fetch failed", "feed_id", feed.ID, "err", err)
+			stats.Failed++
 		}
 	}
-	return imported, skipped
+	return stats
 }
 
 func (a *App) findOrCreateCategory(r *http.Request, name string) (int64, error) {
@@ -1502,6 +1514,22 @@ func redirectBack(w http.ResponseWriter, r *http.Request) {
 		target = "/"
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func redirectBackWithToast(w http.ResponseWriter, r *http.Request, message string) {
+	target := r.Header.Get("Referer")
+	if target == "" {
+		target = "/"
+	}
+	parsed, err := url.Parse(target)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	values := parsed.Query()
+	values.Set("toast", message)
+	parsed.RawQuery = values.Encode()
+	http.Redirect(w, r, parsed.String(), http.StatusSeeOther)
 }
 
 func (a *App) allowLoginAttempt(r *http.Request) bool {

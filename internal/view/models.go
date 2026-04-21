@@ -42,6 +42,7 @@ type HomeData struct {
 	Offset     int64
 	NextOffset int64
 	HasMore    bool
+	Notice     string
 }
 
 type FeedManagementData struct {

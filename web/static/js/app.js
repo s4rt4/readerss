@@ -6,6 +6,7 @@
   const articleList = document.querySelector("[data-article-list]");
   const viewMenuTrigger = document.querySelector("[data-view-menu-trigger]");
   const viewPopover = document.querySelector("[data-view-popover]");
+  const toast = document.querySelector("[data-toast]");
   let gPrefix = false;
   const detail = {
     source: document.querySelector("[data-detail-source]"),
@@ -27,6 +28,14 @@
   }
   syncThemeLogos();
   applyArticleView(localStorage.getItem("readress-view") || "magazine");
+  if (toast) {
+    window.setTimeout(() => {
+      toast.classList.add("is-hiding");
+      window.setTimeout(() => {
+        toast.remove();
+      }, 220);
+    }, 4200);
+  }
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
