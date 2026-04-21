@@ -739,6 +739,8 @@ h1 {
 }
 
 .article-list[data-view="cards"] .article-row {
+  display: flex;
+  flex-direction: column;
   min-height: 190px;
   align-content: start;
 }
@@ -746,6 +748,7 @@ h1 {
 .article-list[data-view="cards"] .article-select {
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
+  flex: 1;
 }
 
 .article-list[data-view="cards"] .read-dot {
@@ -763,11 +766,24 @@ h1 {
   -webkit-line-clamp: 4;
 }
 
+.article-list[data-view="cards"] .row-actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-top: 12px;
+}
+
 .article-list[data-view="article"] .article-row {
+  grid-template-columns: 152px minmax(0, 1fr);
+  align-items: start;
   padding: 18px;
 }
 
 .article-list[data-view="article"] .article-select {
+  grid-column: 1 / -1;
+  grid-row: 1;
   grid-template-columns: 8px 132px minmax(0, 1fr);
 }
 
@@ -785,23 +801,61 @@ h1 {
   font-size: 1.08rem;
 }
 
+.article-list[data-view="article"] .row-actions {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  width: 132px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding-top: 10px;
+  margin-left: 20px;
+}
+
 .article-list[data-view="title"] {
   gap: 6px;
 }
 
 .article-list[data-view="title"] .article-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   padding: 10px 12px;
+}
+
+.article-list[data-view="title"] .article-select {
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: center;
 }
 
 .article-list[data-view="title"] .article-row-summary,
 .article-list[data-view="title"] .article-row-meta,
-.article-list[data-view="title"] .article-thumb,
-.article-list[data-view="title"] .row-actions {
+.article-list[data-view="title"] .article-thumb {
   display: none;
+}
+
+.article-list[data-view="title"] .article-row-main {
+  min-width: 0;
+}
+
+.article-list[data-view="title"] .article-row-top {
+  align-items: center;
+}
+
+.article-list[data-view="title"] .article-row-top strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .article-list[data-view="title"] .article-row-top em {
   font-size: 0.72rem;
+}
+
+.article-list[data-view="title"] .row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .article-row {
