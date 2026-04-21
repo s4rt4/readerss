@@ -39,6 +39,9 @@ type HomeData struct {
 	Errors     int
 	Filter     string
 	Density    string
+	Offset     int64
+	NextOffset int64
+	HasMore    bool
 }
 
 type FeedManagementData struct {
@@ -225,6 +228,13 @@ func navState(filter, current string) string {
 		return "active"
 	}
 	return ""
+}
+
+func nextArticlesURL(filter string, offset int64) string {
+	if filter == "" {
+		filter = "unread"
+	}
+	return fmt.Sprintf("/?filter=%s&offset=%d", filter, offset)
 }
 
 func articleReadAction(article ArticleView) string {

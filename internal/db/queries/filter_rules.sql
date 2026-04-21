@@ -12,3 +12,8 @@ RETURNING id, user_id, feed_id, match_type, pattern, action, created_at;
 -- name: DeleteFilterRule :exec
 DELETE FROM filter_rules
 WHERE id = ? AND user_id = ?;
+
+-- name: UpdateFilterRule :exec
+UPDATE filter_rules
+SET feed_id = ?, match_type = ?, pattern = ?, action = ?
+WHERE id = ? AND user_id = ?;

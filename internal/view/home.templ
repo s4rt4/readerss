@@ -250,6 +250,12 @@ templ Home(data HomeData) {
 								for i, article := range data.Articles {
 									@ArticleRow(article, data.Boards, i == 0)
 								}
+								if data.HasMore {
+									<a class="load-more-link" href={ nextArticlesURL(data.Filter, data.NextOffset) }>
+										<span>Next page</span>
+										@IconArrowLeft()
+									</a>
+								}
 							}
 						</div>
 					</div>

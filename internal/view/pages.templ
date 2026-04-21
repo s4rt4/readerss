@@ -431,6 +431,41 @@ templ Settings(data SettingsData) {
 								<div class="table-main">
 									<strong>{ rule.Pattern }</strong>
 									<small>{ rule.MatchType } · { rule.Action } · { rule.FeedTitle }</small>
+									<details class="inline-editor">
+										<summary>Edit rule</summary>
+										<form class="stacked-form compact-form" action={ fmt.Sprintf("/settings/filter-rules/%d", rule.ID) } method="post">
+											<label>
+												<span>Feed scope</span>
+												<select name="feed_id">
+													<option value="0" selected?={ selectedInt(0, rule.FeedID) }>All feeds</option>
+													for _, feed := range data.Feeds {
+														<option value={ fmt.Sprint(feed.ID) } selected?={ selectedInt(feed.ID, rule.FeedID) }>{ feed.Title }</option>
+													}
+												</select>
+											</label>
+											<label>
+												<span>Match</span>
+												<select name="match_type">
+													<option value="title_contains" selected?={ selectedString("title_contains", rule.MatchType) }>Title contains</option>
+													<option value="url_contains" selected?={ selectedString("url_contains", rule.MatchType) }>URL contains</option>
+													<option value="content_contains" selected?={ selectedString("content_contains", rule.MatchType) }>Content contains</option>
+												</select>
+											</label>
+											<label>
+												<span>Pattern</span>
+												<input type="text" name="pattern" value={ rule.Pattern }/>
+											</label>
+											<label>
+												<span>Action</span>
+												<select name="action">
+													<option value="mark_read" selected?={ selectedString("mark_read", rule.Action) }>Mark read</option>
+													<option value="star" selected?={ selectedString("star", rule.Action) }>Star</option>
+													<option value="delete" selected?={ selectedString("delete", rule.Action) }>Delete</option>
+												</select>
+											</label>
+											<button class="secondary-button" type="submit">Save rule</button>
+										</form>
+									</details>
 								</div>
 								<form action={ fmt.Sprintf("/settings/filter-rules/%d/delete", rule.ID) } method="post" data-confirm="Delete this filter rule?">
 									<button class="icon-button danger" type="submit" aria-label="Delete rule" title="Delete rule">@IconTrash()</button>

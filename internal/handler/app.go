@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -82,6 +84,7 @@ func (a *App) Routes(r chi.Router) {
 	r.Post("/logout", a.logout)
 	r.Group(func(protected chi.Router) {
 		protected.Use(a.requireAuth)
+		protected.Use(a.csrfProtection)
 		protected.Get("/", a.home)
 		protected.Get("/feeds/manage", a.feedManagement)
 		protected.Post("/feeds", a.createFeed)
@@ -111,6 +114,7 @@ func (a *App) Routes(r chi.Router) {
 		protected.Get("/settings/opml/export", a.exportOPML)
 		protected.Post("/settings/opml/import", a.importOPML)
 		protected.Post("/settings/filter-rules", a.createFilterRule)
+		protected.Post("/settings/filter-rules/{id}", a.updateFilterRule)
 		protected.Post("/settings/filter-rules/{id}/delete", a.deleteFilterRule)
 		protected.Get("/search", a.search)
 		protected.Get("/feed-health", a.feedHealth)
@@ -475,6 +479,34 @@ func (a *App) createFilterRule(w http.ResponseWriter, r *http.Request) {
 	a.redirectSettings(w, r, "Filter rule added.", "")
 }
 
+func (a *App) updateFilterRule(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		a.redirectSettings(w, r, "", "Could not read filter rule form.")
+		return
+	}
+	pattern := strings.TrimSpace(r.PostForm.Get("pattern"))
+	if pattern == "" {
+		a.redirectSettings(w, r, "", "Filter rule pattern is required.")
+		return
+	}
+	if err := a.queries.UpdateFilterRule(r.Context(), sqlc.UpdateFilterRuleParams{
+		ID:        id,
+		UserID:    a.userID,
+		FeedID:    nullInt64(parseFormInt(r, "feed_id", 0)),
+		MatchType: normalizeChoice(r.PostForm.Get("match_type"), "title_contains", "title_contains", "url_contains", "content_contains"),
+		Pattern:   pattern,
+		Action:    normalizeChoice(r.PostForm.Get("action"), "mark_read", "mark_read", "star", "delete"),
+	}); err != nil {
+		a.redirectSettings(w, r, "", "Could not update filter rule.")
+		return
+	}
+	a.redirectSettings(w, r, "Filter rule updated.", "")
+}
+
 func (a *App) deleteFilterRule(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseIDParam(w, r)
 	if !ok {
@@ -638,16 +670,50 @@ func render(w http.ResponseWriter, r *http.Request, component templ.Component) {
 	}
 }
 
+func (a *App) csrfProtection(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := a.ensureCSRFToken(w, r)
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+			submitted := r.Header.Get("X-CSRF-Token")
+			if submitted == "" {
+				submitted = r.FormValue("csrf_token")
+			}
+			if submitted == "" || submitted != token {
+				http.Error(w, "invalid csrf token", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) ensureCSRFToken(w http.ResponseWriter, r *http.Request) string {
+	if cookie, err := r.Cookie("readress_csrf"); err == nil && len(cookie.Value) >= 32 {
+		return cookie.Value
+	}
+	token := randomToken()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "readress_csrf",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   86400,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+	return token
+}
+
 func (a *App) homeData(r *http.Request) (view.HomeData, error) {
 	filter := normalizeArticleFilter(r.URL.Query().Get("filter"))
 	categories, feeds, err := a.loadLibrary(r)
 	if err != nil {
 		return view.HomeData{}, err
 	}
-	articles, err := a.loadRecentArticles(r, filter)
+	articles, hasMore, err := a.loadRecentArticles(r, filter)
 	if err != nil {
 		return view.HomeData{}, err
 	}
+	offset := parseQueryInt(r, "offset", 0)
 	boards, err := a.loadBoards(r)
 	if err != nil {
 		return view.HomeData{}, err
@@ -666,7 +732,7 @@ func (a *App) homeData(r *http.Request) (view.HomeData, error) {
 			errors++
 		}
 	}
-	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter, Density: settings.Density}, nil
+	return view.HomeData{Categories: categories, Feeds: feeds, Boards: boards, Articles: articles, Unread: unread, All: all, Starred: starred, ReadLater: readLater, Errors: errors, Filter: filter, Density: settings.Density, Offset: offset, NextOffset: offset + articlePageSize, HasMore: hasMore}, nil
 }
 
 func (a *App) boardsData(r *http.Request, notice, formError string) (view.BoardsData, error) {
@@ -882,14 +948,17 @@ func (a *App) loadBoards(r *http.Request) ([]view.BoardView, error) {
 	return boards, nil
 }
 
-func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.ArticleView, error) {
-	params := sqlc.ListRecentArticlesParams{UserID: a.userID, Limit: 50, Offset: 0}
+const articlePageSize = int64(30)
+
+func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.ArticleView, bool, error) {
+	offset := parseQueryInt(r, "offset", 0)
+	params := sqlc.ListRecentArticlesParams{UserID: a.userID, Limit: articlePageSize + 1, Offset: offset}
 	var articles []view.ArticleView
 	switch filter {
 	case "starred":
 		starred, err := a.queries.ListStarredArticles(r.Context(), sqlc.ListStarredArticlesParams(params))
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, row := range starred {
 			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
@@ -897,7 +966,7 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 	case "all":
 		rows, err := a.queries.ListRecentArticles(r.Context(), params)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, row := range rows {
 			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
@@ -905,7 +974,7 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 	case "read-later":
 		rows, err := a.queries.ListReadLaterArticles(r.Context(), sqlc.ListReadLaterArticlesParams(params))
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, row := range rows {
 			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
@@ -913,46 +982,53 @@ func (a *App) loadRecentArticles(r *http.Request, filter string) ([]view.Article
 	default:
 		if strings.HasPrefix(filter, "feed:") {
 			feedID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "feed:"), 10, 64)
-			rows, err := a.queries.ListRecentArticlesByFeed(r.Context(), sqlc.ListRecentArticlesByFeedParams{UserID: a.userID, ID: feedID, Limit: 50, Offset: 0})
+			rows, err := a.queries.ListRecentArticlesByFeed(r.Context(), sqlc.ListRecentArticlesByFeedParams{UserID: a.userID, ID: feedID, Limit: articlePageSize + 1, Offset: offset})
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			for _, row := range rows {
 				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 			}
-			return articles, nil
+			return trimArticlePage(articles)
 		}
 		if strings.HasPrefix(filter, "category:") {
 			categoryID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "category:"), 10, 64)
-			rows, err := a.queries.ListRecentArticlesByCategory(r.Context(), sqlc.ListRecentArticlesByCategoryParams{UserID: a.userID, CategoryID: nullInt64(categoryID), Limit: 50, Offset: 0})
+			rows, err := a.queries.ListRecentArticlesByCategory(r.Context(), sqlc.ListRecentArticlesByCategoryParams{UserID: a.userID, CategoryID: nullInt64(categoryID), Limit: articlePageSize + 1, Offset: offset})
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			for _, row := range rows {
 				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 			}
-			return articles, nil
+			return trimArticlePage(articles)
 		}
 		if strings.HasPrefix(filter, "board:") {
 			boardID, _ := strconv.ParseInt(strings.TrimPrefix(filter, "board:"), 10, 64)
-			rows, err := a.queries.ListBoardArticles(r.Context(), sqlc.ListBoardArticlesParams{ID: boardID, UserID: a.userID, Limit: 50, Offset: 0})
+			rows, err := a.queries.ListBoardArticles(r.Context(), sqlc.ListBoardArticlesParams{ID: boardID, UserID: a.userID, Limit: articlePageSize + 1, Offset: offset})
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			for _, row := range rows {
 				articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 			}
-			return articles, nil
+			return trimArticlePage(articles)
 		}
 		unread, err := a.queries.ListUnreadArticles(r.Context(), sqlc.ListUnreadArticlesParams(params))
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, row := range unread {
 			articles = append(articles, articleViewFromRow(row.ID, row.FeedID, row.Url, row.Title, row.Content, row.Excerpt, row.ImageUrl, row.PublishedAt, row.CreatedAt, row.IsRead, row.IsStarred, row.IsReadLater, row.FeedTitle, row.Category))
 		}
 	}
-	return articles, nil
+	return trimArticlePage(articles)
+}
+
+func trimArticlePage(articles []view.ArticleView) ([]view.ArticleView, bool, error) {
+	if int64(len(articles)) <= articlePageSize {
+		return articles, false, nil
+	}
+	return articles[:articlePageSize], true, nil
 }
 
 func articleViewFromRow(id, feedID int64, urlValue, title string, contentValue, excerpt, imageURL sql.NullString, publishedAt sql.NullTime, createdAt time.Time, isRead, isStarred, isReadLater int64, feedTitle, category string) view.ArticleView {
@@ -1342,6 +1418,14 @@ func parseFormInt(r *http.Request, name string, fallback int64) int64 {
 	return value
 }
 
+func parseQueryInt(r *http.Request, name string, fallback int64) int64 {
+	value, err := strconv.ParseInt(r.URL.Query().Get(name), 10, 64)
+	if err != nil || value < 0 {
+		return fallback
+	}
+	return value
+}
+
 func boolInt(value bool) int64 {
 	if value {
 		return 1
@@ -1375,6 +1459,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func randomToken() string {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes)
 }
 
 func normalizeArticleFilter(value string) string {

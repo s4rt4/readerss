@@ -158,6 +158,32 @@
     });
   }
 
+  function readCookie(name) {
+    return document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(name + "="))
+      ?.slice(name.length + 1) || "";
+  }
+
+  function ensureCSRFField(form) {
+    if ((form.method || "").toLowerCase() !== "post") {
+      return;
+    }
+    const token = decodeURIComponent(readCookie("readress_csrf"));
+    if (!token) {
+      return;
+    }
+    let field = form.querySelector("input[name='csrf_token']");
+    if (!field) {
+      field = document.createElement("input");
+      field.type = "hidden";
+      field.name = "csrf_token";
+      form.appendChild(field);
+    }
+    field.value = token;
+  }
+
   document.querySelector("[data-open-sidebar]")?.addEventListener("click", openSidebar);
   document.querySelectorAll("[data-close-sidebar]").forEach((item) => item.addEventListener("click", closeSidebar));
   document.querySelector("[data-close-detail]")?.addEventListener("click", function () {
@@ -220,6 +246,7 @@
 
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", function (event) {
+      ensureCSRFField(form);
       if (!window.confirm(form.dataset.confirm || "Continue?")) {
         event.preventDefault();
       }
@@ -228,6 +255,7 @@
 
   document.querySelectorAll("form[data-loading-label]").forEach((form) => {
     form.addEventListener("submit", function () {
+      ensureCSRFField(form);
       const button = form.querySelector("button[type='submit']");
       if (!button) {
         return;
@@ -241,6 +269,12 @@
       } else {
         button.setAttribute("aria-label", label);
       }
+    });
+  });
+
+  document.querySelectorAll("form[method='post']").forEach((form) => {
+    form.addEventListener("submit", function () {
+      ensureCSRFField(form);
     });
   });
 

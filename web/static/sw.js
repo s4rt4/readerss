@@ -1,6 +1,5 @@
-const CACHE_NAME = "readress-v1";
-const CORE_ASSETS = [
-  "/",
+const CACHE_NAME = "readress-v2";
+const STATIC_ASSETS = [
   "/static/css/app.css",
   "/static/js/app.js",
   "/static/img/readerss_favicon.svg",
@@ -10,7 +9,7 @@ const CORE_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
   self.skipWaiting();
 });
 
@@ -22,16 +21,42 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  const request = event.request;
+  if (request.method !== "GET") {
     return;
   }
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
+
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (url.pathname.startsWith("/static/")) {
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+
+  event.respondWith(networkFirst(request));
 });
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) {
+    return cached;
+  }
+  const response = await fetch(request);
+  const cache = await caches.open(CACHE_NAME);
+  cache.put(request, response.clone());
+  return response;
+}
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    const cache = await caches.open(CACHE_NAME);
+    cache.put(request, response.clone());
+    return response;
+  } catch (_) {
+    return caches.match(request);
+  }
+}

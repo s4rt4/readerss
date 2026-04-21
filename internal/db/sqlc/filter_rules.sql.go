@@ -97,3 +97,30 @@ func (q *Queries) ListFilterRules(ctx context.Context, userID int64) ([]FilterRu
 	}
 	return items, nil
 }
+
+const updateFilterRule = `-- name: UpdateFilterRule :exec
+UPDATE filter_rules
+SET feed_id = ?, match_type = ?, pattern = ?, action = ?
+WHERE id = ? AND user_id = ?
+`
+
+type UpdateFilterRuleParams struct {
+	FeedID    sql.NullInt64 `json:"feed_id"`
+	MatchType string        `json:"match_type"`
+	Pattern   string        `json:"pattern"`
+	Action    string        `json:"action"`
+	ID        int64         `json:"id"`
+	UserID    int64         `json:"user_id"`
+}
+
+func (q *Queries) UpdateFilterRule(ctx context.Context, arg UpdateFilterRuleParams) error {
+	_, err := q.db.ExecContext(ctx, updateFilterRule,
+		arg.FeedID,
+		arg.MatchType,
+		arg.Pattern,
+		arg.Action,
+		arg.ID,
+		arg.UserID,
+	)
+	return err
+}
