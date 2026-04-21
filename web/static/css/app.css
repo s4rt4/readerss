@@ -1368,6 +1368,10 @@ kbd {
   padding: 18px;
 }
 
+.feed-form-panel {
+  scroll-margin-top: 18px;
+}
+
 .panel-heading {
   display: flex;
   align-items: flex-start;

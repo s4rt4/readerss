@@ -194,7 +194,7 @@ templ FeedManagement(data FeedManagementData) {
 	@AppPage("Feed Management") {
 		@PageHeader("Feed management", "Add, edit, and organize feeds", "Subscribe by URL, assign categories, inspect errors, and prepare feed actions before the backend is connected.")
 		<section class="management-grid">
-			<form class="panel stacked-form" action={ data.Form.Action() } method="post">
+			<form id="feed-form" class="panel stacked-form feed-form-panel" action={ data.Form.Action() } method="post">
 				<div class="panel-heading">
 					<div>
 						if data.Form.IsEditing() {
@@ -221,7 +221,7 @@ templ FeedManagement(data FeedManagementData) {
 				}
 				<label>
 					<span>Feed or homepage URL</span>
-					<input type="url" name="url" value={ data.Form.URL } placeholder="https://example.com/feed.xml"/>
+					<input type="url" name="url" value={ data.Form.URL } placeholder="https://example.com/feed.xml" autofocus?={ data.Form.IsEditing() }/>
 				</label>
 				<label>
 					<span>Title</span>
@@ -299,7 +299,7 @@ templ FeedManageRow(feed FeedView) {
 			<form action={ fmt.Sprintf("/feeds/%d/mark-read", feed.ID) } method="post" data-loading-label="Marking">
 				<button class="icon-button" type="submit" aria-label="Mark feed read" title="Mark feed read">@IconCheckCircle()</button>
 			</form>
-			<a class="icon-button" href={ fmt.Sprintf("/feeds/%d/edit", feed.ID) } aria-label="Edit feed" title="Edit feed">@IconSettings()</a>
+			<a class="icon-button" href={ fmt.Sprintf("/feeds/%d/edit#feed-form", feed.ID) } aria-label="Edit feed" title="Edit feed">@IconSettings()</a>
 			<form action={ fmt.Sprintf("/feeds/%d/delete", feed.ID) } method="post" data-confirm="Delete this feed and its articles?">
 				<button class="icon-button danger" type="submit" aria-label="Delete feed" title="Delete feed">@IconTrash()</button>
 			</form>
