@@ -14,6 +14,7 @@
     tag: document.querySelector("[data-detail-tag]"),
     title: document.querySelector("[data-detail-title]"),
     link: document.querySelector("[data-detail-link]"),
+    openOriginal: document.querySelector("[data-detail-open-original]"),
     summary: document.querySelector("[data-detail-summary]"),
     body: document.querySelector("[data-detail-body]"),
     image: document.querySelector("[data-detail-image]"),
@@ -140,6 +141,9 @@
     detail.title.textContent = title;
     if (detail.link) {
       detail.link.href = url || "#";
+    }
+    if (detail.openOriginal) {
+      detail.openOriginal.href = url || "#";
     }
     detail.summary.textContent = summary;
     if (detail.image) {

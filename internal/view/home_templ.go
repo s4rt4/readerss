@@ -1006,7 +1006,7 @@ func Home(data HomeData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "\" target=\"_blank\" rel=\"noreferrer\" aria-label=\"Open original\" title=\"Open original\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "\" target=\"_blank\" rel=\"noreferrer\" aria-label=\"Open original\" title=\"Open original\" data-detail-open-original>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
