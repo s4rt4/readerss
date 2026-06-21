@@ -46,6 +46,10 @@ var (
 	ogImageRE     = regexp.MustCompile(`(?is)<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']|<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']`)
 )
 
+// articleFetchLimit caps how much of an article page we read for full-text
+// extraction. Future plc sites push the article body past 1 MB, so allow 4 MB.
+const articleFetchLimit = 4 << 20
+
 func NewFeedFetcher(queries *sqlc.Queries) *FeedFetcher {
 	return &FeedFetcher{
 		queries: queries,
@@ -236,7 +240,9 @@ func (f *FeedFetcher) fetchArticleExtras(ctx context.Context, articleURL string)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", ""
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// Some content sites (e.g. Future plc) ship 1.5-2 MB pages where the article
+	// body sits past the 1 MB mark, so cap generously rather than truncate it off.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, articleFetchLimit))
 	if err != nil {
 		return "", ""
 	}
