@@ -19,7 +19,9 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
+	"readress/internal/auth"
 	"readress/internal/db/sqlc"
 	"readress/internal/service"
 	"readress/internal/view"
@@ -85,48 +87,58 @@ func NewApp(db *sql.DB, logger *slog.Logger, userID int64) *App {
 }
 
 func (a *App) Routes(r chi.Router) {
-	r.Get("/login", a.login)
-	r.Post("/login", a.loginPost)
-	r.Post("/logout", a.logout)
-	r.Group(func(protected chi.Router) {
-		protected.Use(a.requireAuth)
-		protected.Use(a.csrfProtection)
-		protected.Get("/", a.home)
-		protected.Get("/feeds/manage", a.feedManagement)
-		protected.Post("/feeds", a.createFeed)
-		protected.Post("/feeds/refresh", a.refreshAllFeeds)
-		protected.Get("/feeds/{id}/edit", a.editFeed)
-		protected.Post("/feeds/{id}", a.updateFeed)
-		protected.Post("/feeds/{id}/delete", a.deleteFeed)
-		protected.Post("/feeds/{id}/refresh", a.refreshFeed)
-		protected.Post("/feeds/{id}/mark-read", a.markFeedRead)
-		protected.Post("/categories", a.createCategory)
-		protected.Post("/categories/{id}/mark-read", a.markCategoryRead)
-		protected.Post("/articles/{id}/read", a.markArticleRead)
-		protected.Post("/articles/{id}/unread", a.markArticleUnread)
-		protected.Post("/articles/{id}/star", a.starArticle)
-		protected.Post("/articles/{id}/unstar", a.unstarArticle)
-		protected.Post("/articles/{id}/read-later", a.addReadLater)
-		protected.Post("/articles/{id}/read-later/remove", a.removeReadLater)
-		protected.Post("/articles/{id}/boards", a.addArticleToBoard)
-		protected.Post("/articles/mark-all-read", a.markAllArticlesRead)
-		protected.Get("/boards", a.boards)
-		protected.Post("/boards", a.createBoard)
-		protected.Get("/boards/{id}", a.boardDetail)
-		protected.Post("/boards/{id}/delete", a.deleteBoard)
-		protected.Post("/boards/{id}/articles/{articleID}/remove", a.removeArticleFromBoard)
-		protected.Get("/settings", a.settings)
-		protected.Post("/settings", a.updateSettings)
-		protected.Get("/settings/opml/export", a.exportOPML)
-		protected.Post("/settings/opml/import", a.importOPML)
-		protected.Post("/settings/filter-rules", a.createFilterRule)
-		protected.Post("/settings/filter-rules/{id}", a.updateFilterRule)
-		protected.Post("/settings/filter-rules/{id}/delete", a.deleteFilterRule)
-		protected.Get("/search", a.search)
-		protected.Get("/feed-health", a.feedHealth)
-		protected.Get("/events", a.events)
+	// The Server-Sent Events stream is long-lived and must not be cut off by a
+	// per-request timeout, so it is registered outside the timed group below.
+	r.Group(func(stream chi.Router) {
+		stream.Use(a.requireAuth)
+		stream.Use(a.csrfProtection)
+		stream.Get("/events", a.events)
 	})
-	r.Get("/healthz", a.healthz)
+
+	r.Group(func(timed chi.Router) {
+		timed.Use(middleware.Timeout(30 * time.Second))
+		timed.Get("/login", a.login)
+		timed.Post("/login", a.loginPost)
+		timed.Post("/logout", a.logout)
+		timed.Get("/healthz", a.healthz)
+		timed.Group(func(protected chi.Router) {
+			protected.Use(a.requireAuth)
+			protected.Use(a.csrfProtection)
+			protected.Get("/", a.home)
+			protected.Get("/feeds/manage", a.feedManagement)
+			protected.Post("/feeds", a.createFeed)
+			protected.Post("/feeds/refresh", a.refreshAllFeeds)
+			protected.Get("/feeds/{id}/edit", a.editFeed)
+			protected.Post("/feeds/{id}", a.updateFeed)
+			protected.Post("/feeds/{id}/delete", a.deleteFeed)
+			protected.Post("/feeds/{id}/refresh", a.refreshFeed)
+			protected.Post("/feeds/{id}/mark-read", a.markFeedRead)
+			protected.Post("/categories", a.createCategory)
+			protected.Post("/categories/{id}/mark-read", a.markCategoryRead)
+			protected.Post("/articles/{id}/read", a.markArticleRead)
+			protected.Post("/articles/{id}/unread", a.markArticleUnread)
+			protected.Post("/articles/{id}/star", a.starArticle)
+			protected.Post("/articles/{id}/unstar", a.unstarArticle)
+			protected.Post("/articles/{id}/read-later", a.addReadLater)
+			protected.Post("/articles/{id}/read-later/remove", a.removeReadLater)
+			protected.Post("/articles/{id}/boards", a.addArticleToBoard)
+			protected.Post("/articles/mark-all-read", a.markAllArticlesRead)
+			protected.Get("/boards", a.boards)
+			protected.Post("/boards", a.createBoard)
+			protected.Get("/boards/{id}", a.boardDetail)
+			protected.Post("/boards/{id}/delete", a.deleteBoard)
+			protected.Post("/boards/{id}/articles/{articleID}/remove", a.removeArticleFromBoard)
+			protected.Get("/settings", a.settings)
+			protected.Post("/settings", a.updateSettings)
+			protected.Get("/settings/opml/export", a.exportOPML)
+			protected.Post("/settings/opml/import", a.importOPML)
+			protected.Post("/settings/filter-rules", a.createFilterRule)
+			protected.Post("/settings/filter-rules/{id}", a.updateFilterRule)
+			protected.Post("/settings/filter-rules/{id}/delete", a.deleteFilterRule)
+			protected.Get("/search", a.search)
+			protected.Get("/feed-health", a.feedHealth)
+		})
+	})
 }
 
 func (a *App) home(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +176,7 @@ func (a *App) loginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.clearLoginAttempts(r)
+	a.upgradePasswordHash(r, user, password)
 	a.setSession(w, user.ID, r.PostForm.Get("remember") == "1")
 	target := r.PostForm.Get("next")
 	if target == "" || !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
@@ -832,6 +845,9 @@ func (a *App) filterRuleViews(r *http.Request) []view.FilterRuleView {
 		return nil
 	}
 	_, feeds, err := a.loadLibrary(r)
+	if err != nil {
+		a.logger.Warn("load library for filter rules failed", "err", err)
+	}
 	feedNames := map[int64]string{}
 	for _, feed := range feeds {
 		feedNames[feed.ID] = feed.Title
@@ -1446,11 +1462,26 @@ func boolInt(value bool) int64 {
 }
 
 func validPassword(stored, password string) bool {
-	// Compatibility for databases created before auth was wired.
-	if stored == "local-dev-password-placeholder" && password == "readerss" {
-		return true
+	return auth.Verify(stored, password)
+}
+
+// upgradePasswordHash re-hashes legacy password records with the current scheme
+// after a successful login. Failures are logged but never block sign-in.
+func (a *App) upgradePasswordHash(r *http.Request, user sqlc.User, password string) {
+	if !auth.NeedsUpgrade(user.PasswordHash) {
+		return
 	}
-	return stored == passwordDigest(password)
+	hashed, err := auth.Hash(password)
+	if err != nil {
+		a.logger.Warn("rehash password failed", "err", err)
+		return
+	}
+	if err := a.queries.UpdateUserPassword(r.Context(), sqlc.UpdateUserPasswordParams{
+		PasswordHash: hashed,
+		ID:           user.ID,
+	}); err != nil {
+		a.logger.Warn("persist upgraded password failed", "err", err)
+	}
 }
 
 func normalizeChoice(value, fallback string, allowed ...string) string {
@@ -1508,28 +1539,35 @@ func (a *App) redirectBoards(w http.ResponseWriter, r *http.Request, notice, for
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-func redirectBack(w http.ResponseWriter, r *http.Request) {
-	target := r.Header.Get("Referer")
-	if target == "" {
-		target = "/"
+// transientParams are one-shot flash params that must not be carried forward
+// when redirecting back to the referring page.
+var transientParams = []string{"toast", "notice", "error"}
+
+// refererTarget parses the Referer header and strips any transient flash params
+// so they do not accumulate across successive actions. It falls back to "/".
+func refererTarget(r *http.Request) *url.URL {
+	parsed, err := url.Parse(r.Header.Get("Referer"))
+	if err != nil || parsed.Path == "" {
+		parsed = &url.URL{Path: "/"}
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	values := parsed.Query()
+	for _, name := range transientParams {
+		values.Del(name)
+	}
+	parsed.RawQuery = values.Encode()
+	return parsed
+}
+
+func redirectBack(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, refererTarget(r).String(), http.StatusSeeOther)
 }
 
 func redirectBackWithToast(w http.ResponseWriter, r *http.Request, message string) {
-	target := r.Header.Get("Referer")
-	if target == "" {
-		target = "/"
-	}
-	parsed, err := url.Parse(target)
-	if err != nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-	values := parsed.Query()
+	target := refererTarget(r)
+	values := target.Query()
 	values.Set("toast", message)
-	parsed.RawQuery = values.Encode()
-	http.Redirect(w, r, parsed.String(), http.StatusSeeOther)
+	target.RawQuery = values.Encode()
+	http.Redirect(w, r, target.String(), http.StatusSeeOther)
 }
 
 func (a *App) allowLoginAttempt(r *http.Request) bool {
@@ -1549,6 +1587,12 @@ func (a *App) recordLoginFailure(r *http.Request) {
 	now := time.Now()
 	a.loginMu.Lock()
 	defer a.loginMu.Unlock()
+	// Drop expired windows so the map cannot grow without bound.
+	for k, v := range a.loginAttempts {
+		if now.After(v.WindowEnds) {
+			delete(a.loginAttempts, k)
+		}
+	}
 	attempt := a.loginAttempts[key]
 	if now.After(attempt.WindowEnds) {
 		attempt = loginAttempt{WindowEnds: now.Add(time.Minute)}

@@ -4,16 +4,25 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"readress/internal/auth"
 )
 
-const DefaultUsername = "sarta"
+const (
+	DefaultUsername = "sarta"
+	DefaultPassword = "readerss"
+)
 
 func EnsureDefaultData(ctx context.Context, conn *sql.DB) (int64, error) {
+	passwordHash, err := auth.Hash(DefaultPassword)
+	if err != nil {
+		return 0, fmt.Errorf("hash default password: %w", err)
+	}
 	if _, err := conn.ExecContext(ctx, `
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
 ON CONFLICT(username) DO NOTHING
-`, DefaultUsername, "sha256:F2dCBytUHPliqCpZHC7mm9-40Kqv-LGB4xZcQWfOSig"); err != nil {
+`, DefaultUsername, passwordHash); err != nil {
 		return 0, fmt.Errorf("ensure default user: %w", err)
 	}
 

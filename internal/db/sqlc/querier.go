@@ -58,6 +58,7 @@ type Querier interface {
 	UpdateFeedFetchSuccess(ctx context.Context, arg UpdateFeedFetchSuccessParams) error
 	UpdateFeedFetchedAt(ctx context.Context, arg UpdateFeedFetchedAtParams) error
 	UpdateFilterRule(ctx context.Context, arg UpdateFilterRuleParams) error
+	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpsertReaderSettings(ctx context.Context, arg UpsertReaderSettingsParams) (ReaderSetting, error)
 }
 

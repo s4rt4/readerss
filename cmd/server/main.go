@@ -69,7 +69,6 @@ func run() error {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
 	staticFS, err := fs.Sub(webassets.Static, "static")
 	if err != nil {
 		return fmt.Errorf("load embedded static files: %w", err)

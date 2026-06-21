@@ -207,8 +207,13 @@ func (f *FeedFetcher) FetchFeed(ctx context.Context, userID, feedID int64) (Fetc
 			}
 			return result, fmt.Errorf("save article %q: %w", article.Title, err)
 		}
-		if err := f.applyFilterRules(ctx, userID, created.ID, created.FeedID, created.Url, created.Title, created.Content); err != nil {
+		deleted, err := f.applyFilterRules(ctx, userID, created.ID, created.FeedID, created.Url, created.Title, created.Content)
+		if err != nil {
 			return result, err
+		}
+		if deleted {
+			result.Skipped++
+			continue
 		}
 		result.Inserted++
 	}
@@ -239,10 +244,13 @@ func (f *FeedFetcher) fetchArticleExtras(ctx context.Context, articleURL string)
 	return ReadableArticleText(htmlValue), absoluteURL(articleURL, firstNonEmpty(extractMetaImage(htmlValue), extractFirstImage(htmlValue)))
 }
 
-func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, feedID int64, articleURL, titleValue string, contentValue sql.NullString) error {
+// applyFilterRules runs the user's filter rules against a freshly stored
+// article. It reports whether the article was deleted by a rule so the caller
+// can avoid counting it as a new article.
+func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, feedID int64, articleURL, titleValue string, contentValue sql.NullString) (bool, error) {
 	rules, err := f.queries.ListFilterRules(ctx, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	title := strings.ToLower(titleValue)
 	urlValue := strings.ToLower(articleURL)
@@ -267,20 +275,20 @@ func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, f
 		switch rule.Action {
 		case "star":
 			if err := f.queries.StarArticle(ctx, sqlc.StarArticleParams{IsStarred: 1, ID: articleID, UserID: userID}); err != nil {
-				return err
+				return false, err
 			}
 		case "delete":
 			if err := f.queries.DeleteArticle(ctx, sqlc.DeleteArticleParams{ID: articleID, UserID: userID}); err != nil {
-				return err
+				return false, err
 			}
-			return nil
+			return true, nil
 		default:
 			if err := f.queries.MarkArticleRead(ctx, sqlc.MarkArticleReadParams{IsRead: 1, ID: articleID, UserID: userID}); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
-	return nil
+	return false, nil
 }
 
 func articleFromItem(feedID int64, item *gofeed.Item) (sqlc.CreateArticleParams, bool) {
