@@ -199,6 +199,70 @@
 
   document.querySelector("[data-open-sidebar]")?.addEventListener("click", openSidebar);
   document.querySelectorAll("[data-close-sidebar]").forEach((item) => item.addEventListener("click", closeSidebar));
+
+  setupSidebarCollapse();
+
+  function setupSidebarCollapse() {
+    const toggle = document.querySelector("[data-toggle-collapse]");
+    const applyCollapsed = (collapsed) => {
+      shell?.classList.toggle("sidebar-collapsed", collapsed);
+      if (toggle) {
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+        toggle.setAttribute("aria-label", label);
+        toggle.setAttribute("title", label);
+      }
+    };
+    applyCollapsed(localStorage.getItem("readress-sidebar-collapsed") === "1");
+    toggle?.addEventListener("click", () => {
+      const collapsed = !shell?.classList.contains("sidebar-collapsed");
+      localStorage.setItem("readress-sidebar-collapsed", collapsed ? "1" : "0");
+      applyCollapsed(collapsed);
+      hideSidebarTooltip();
+    });
+
+    let tooltip = null;
+    const sidebar = document.querySelector("[data-sidebar]");
+    const tipText = (el) => {
+      if (el.classList.contains("feed-link")) {
+        return el.querySelector("strong")?.textContent.trim() || "";
+      }
+      const label = Array.from(el.children).find(
+        (child) => child.tagName === "SPAN" && child.textContent.trim()
+      );
+      return label ? label.textContent.trim() : "";
+    };
+    const showSidebarTooltip = (el) => {
+      if (!shell?.classList.contains("sidebar-collapsed")) {
+        return;
+      }
+      const text = tipText(el);
+      if (!text) {
+        return;
+      }
+      if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.className = "sidebar-tooltip";
+        document.body.appendChild(tooltip);
+      }
+      tooltip.textContent = text;
+      tooltip.hidden = false;
+      const rect = el.getBoundingClientRect();
+      tooltip.style.top = rect.top + rect.height / 2 + "px";
+      tooltip.style.left = rect.right + 8 + "px";
+    };
+    function hideSidebarTooltip() {
+      if (tooltip) {
+        tooltip.hidden = true;
+      }
+    }
+
+    document.querySelectorAll("[data-sidebar] .nav-item, [data-sidebar] .feed-link").forEach((el) => {
+      el.addEventListener("mouseenter", () => showSidebarTooltip(el));
+      el.addEventListener("mouseleave", hideSidebarTooltip);
+    });
+    sidebar?.addEventListener("scroll", hideSidebarTooltip, { passive: true });
+  }
   document.querySelector("[data-close-detail]")?.addEventListener("click", function () {
     reader?.classList.remove("detail-open");
   });

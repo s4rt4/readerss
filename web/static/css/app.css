@@ -1858,6 +1858,73 @@ mark {
   }
 }
 
+.sidebar-collapse-toggle {
+  display: inline-flex;
+}
+
+/* Collapsed icon-only sidebar (desktop only; mobile keeps the overlay drawer). */
+@media (min-width: 821px) {
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .app-shell.sidebar-collapsed .sidebar {
+    padding: 18px 10px;
+    gap: 14px;
+  }
+
+  .app-shell.sidebar-collapsed .brand-bar {
+    justify-content: center;
+  }
+
+  .app-shell.sidebar-collapsed .brand-identity,
+  .app-shell.sidebar-collapsed .add-feed,
+  .app-shell.sidebar-collapsed .section-title,
+  .app-shell.sidebar-collapsed .sidebar-empty,
+  .app-shell.sidebar-collapsed .sidebar-footer > div {
+    display: none;
+  }
+
+  .app-shell.sidebar-collapsed .nav-item,
+  .app-shell.sidebar-collapsed .feed-link {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 8px 0;
+  }
+
+  .app-shell.sidebar-collapsed .nav-item > strong,
+  .app-shell.sidebar-collapsed .nav-item > span + span,
+  .app-shell.sidebar-collapsed .feed-link > em,
+  .app-shell.sidebar-collapsed .feed-link > span:nth-child(2) {
+    display: none;
+  }
+
+  .app-shell.sidebar-collapsed .sidebar-footer {
+    justify-content: center;
+  }
+}
+
+/* Floating tooltip shown when hovering items in the collapsed sidebar. */
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 60;
+  transform: translateY(-50%);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.sidebar-tooltip[hidden] {
+  display: none;
+}
+
 @media (max-width: 1120px) {
   .app-shell {
     grid-template-columns: 260px minmax(0, 1fr);
@@ -1912,6 +1979,10 @@ mark {
   .sidebar-close,
   .mobile-only {
     display: inline-flex;
+  }
+
+  .sidebar-collapse-toggle {
+    display: none;
   }
 
   .reader {
