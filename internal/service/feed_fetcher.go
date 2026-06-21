@@ -468,40 +468,51 @@ func ReadableArticleText(value string) string {
 		"script", "style", "noscript", "iframe", "svg", "nav", "header", "footer", "aside", "form", "button",
 		"[role='navigation']", "[role='banner']", "[role='contentinfo']", "[aria-hidden='true']",
 		"[class*='nav']", "[class*='menu']", "[class*='header']", "[class*='footer']", "[class*='sidebar']",
-		"[class*='newsletter']", "[class*='subscribe']", "[class*='cookie']", "[class*='breadcrumb']",
+		"[class*='newsletter']", "[class*='subscribe']", "[class*='signup']", "[class*='cookie']", "[class*='breadcrumb']",
+		"[class*='promo']", "[class*='related']", "[class*='share']", "[class*='social']",
+		"[class*='hawk']", "[class*='recirc']", "[class*='utility']",
 		"[id*='nav']", "[id*='menu']", "[id*='header']", "[id*='footer']", "[id*='sidebar']",
-		"[id*='newsletter']", "[id*='subscribe']", "[id*='cookie']", "[id*='breadcrumb']",
-	}, ",")).Remove()
+		"[id*='newsletter']", "[id*='subscribe']", "[id*='cookie']", "[id*='breadcrumb']", "[id*='utility']",
+		"[data-mrf-recirculation]", "[data-component-name*='UtilityBar']", "[data-component-name*='Social']",
+		// html/body are excluded: site wrappers often carry classes like
+		// "sticky-navigation" that would otherwise match and delete the whole page.
+	}, ",")).Not("html, body").Remove()
 
-	best := ""
-	bestScore := 0
+	// Selectors run from most specific to most generic; the first one whose text
+	// clears the score threshold wins. This avoids picking a large wrapper (like
+	// <main>) that engulfs site chrome just because it has the most words.
 	for _, selector := range []string{
-		"article [itemprop='articleBody']",
+		"#article-body",
 		"[itemprop='articleBody']",
-		"article",
-		"main article",
-		"main",
-		"[role='main']",
+		"article [itemprop='articleBody']",
 		".article-body",
+		".article__body",
+		".articleBody",
 		".post-content",
 		".entry-content",
+		".article-content",
+		"main article",
+		"article",
+		"[role='main']",
+		"main",
 		".content",
 	} {
+		best := ""
+		bestScore := 0
 		doc.Find(selector).Each(func(_ int, selection *goquery.Selection) {
 			htmlValue, err := selection.Html()
 			if err != nil {
 				return
 			}
 			text := ReadableText(htmlValue)
-			score := readableScore(text)
-			if score > bestScore {
+			if score := readableScore(text); score > bestScore {
 				best = text
 				bestScore = score
 			}
 		})
-	}
-	if bestScore >= 40 {
-		return best
+		if bestScore >= 40 {
+			return best
+		}
 	}
 	bodyHTML, err := doc.Find("body").Html()
 	if err != nil || strings.TrimSpace(bodyHTML) == "" {
