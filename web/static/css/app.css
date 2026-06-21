@@ -644,7 +644,7 @@ h1 {
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr);
+  grid-template-columns: var(--reader-list-width, minmax(360px, 0.82fr)) 8px minmax(0, 1.18fr);
   overflow: hidden;
 }
 
@@ -659,8 +659,33 @@ h1 {
 }
 
 .article-list-pane {
-  border-right: 1px solid var(--line);
   background: var(--bg);
+}
+
+/* Draggable divider between the article list and the reading pane. */
+.pane-resizer {
+  position: relative;
+  cursor: col-resize;
+  background: var(--bg);
+  touch-action: none;
+}
+
+.pane-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.pane-resizer:hover::before,
+.pane-resizer.is-dragging::before {
+  width: 3px;
+  background: var(--accent);
 }
 
 .pane-heading {
@@ -1931,7 +1956,7 @@ mark {
   }
 
   .content-grid {
-    grid-template-columns: minmax(310px, 0.95fr) minmax(0, 1.05fr);
+    grid-template-columns: var(--reader-list-width, minmax(310px, 0.95fr)) 8px minmax(0, 1.05fr);
   }
 
   .segmented {
@@ -2006,6 +2031,10 @@ mark {
     display: block;
     height: auto;
     overflow: visible;
+  }
+
+  .pane-resizer {
+    display: none;
   }
 
   .reader:not(.detail-open) .detail-pane {

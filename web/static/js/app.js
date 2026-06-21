@@ -201,6 +201,61 @@
   document.querySelectorAll("[data-close-sidebar]").forEach((item) => item.addEventListener("click", closeSidebar));
 
   setupSidebarCollapse();
+  setupPaneResizer();
+
+  function setupPaneResizer() {
+    const grid = document.querySelector(".content-grid");
+    const resizer = document.querySelector("[data-pane-resizer]");
+    if (!grid || !resizer) {
+      return;
+    }
+    const storageKey = "readress-list-width";
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      grid.style.setProperty("--reader-list-width", saved);
+    }
+
+    let dragging = false;
+    const onMove = (event) => {
+      if (!dragging) {
+        return;
+      }
+      const rect = grid.getBoundingClientRect();
+      const min = 280;
+      const max = rect.width - 380;
+      let width = event.clientX - rect.left;
+      width = Math.max(min, Math.min(max, width));
+      grid.style.setProperty("--reader-list-width", Math.round(width) + "px");
+    };
+    const stop = () => {
+      if (!dragging) {
+        return;
+      }
+      dragging = false;
+      resizer.classList.remove("is-dragging");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      const width = grid.style.getPropertyValue("--reader-list-width");
+      if (width) {
+        localStorage.setItem(storageKey, width.trim());
+      }
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", stop);
+    };
+    resizer.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      dragging = true;
+      resizer.classList.add("is-dragging");
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", stop);
+    });
+    resizer.addEventListener("dblclick", () => {
+      grid.style.removeProperty("--reader-list-width");
+      localStorage.removeItem(storageKey);
+    });
+  }
 
   function setupSidebarCollapse() {
     const toggle = document.querySelector("[data-toggle-collapse]");
