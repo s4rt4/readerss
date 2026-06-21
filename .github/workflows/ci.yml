@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install code generators
+        run: |
+          go install github.com/a-h/templ/cmd/templ@v0.3.1001
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Generate code
+        run: |
+          templ generate
+          sqlc generate
+
+      - name: Verify generated code is committed
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Generated code is out of date. Run 'templ generate' and 'sqlc generate' and commit the result."
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...

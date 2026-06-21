@@ -46,6 +46,10 @@ var (
 	ogImageRE     = regexp.MustCompile(`(?is)<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']|<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']`)
 )
 
+// articleFetchLimit caps how much of an article page we read for full-text
+// extraction. Future plc sites push the article body past 1 MB, so allow 4 MB.
+const articleFetchLimit = 4 << 20
+
 func NewFeedFetcher(queries *sqlc.Queries) *FeedFetcher {
 	return &FeedFetcher{
 		queries: queries,
@@ -207,8 +211,13 @@ func (f *FeedFetcher) FetchFeed(ctx context.Context, userID, feedID int64) (Fetc
 			}
 			return result, fmt.Errorf("save article %q: %w", article.Title, err)
 		}
-		if err := f.applyFilterRules(ctx, userID, created.ID, created.FeedID, created.Url, created.Title, created.Content); err != nil {
+		deleted, err := f.applyFilterRules(ctx, userID, created.ID, created.FeedID, created.Url, created.Title, created.Content)
+		if err != nil {
 			return result, err
+		}
+		if deleted {
+			result.Skipped++
+			continue
 		}
 		result.Inserted++
 	}
@@ -231,7 +240,9 @@ func (f *FeedFetcher) fetchArticleExtras(ctx context.Context, articleURL string)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", ""
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// Some content sites (e.g. Future plc) ship 1.5-2 MB pages where the article
+	// body sits past the 1 MB mark, so cap generously rather than truncate it off.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, articleFetchLimit))
 	if err != nil {
 		return "", ""
 	}
@@ -239,10 +250,13 @@ func (f *FeedFetcher) fetchArticleExtras(ctx context.Context, articleURL string)
 	return ReadableArticleText(htmlValue), absoluteURL(articleURL, firstNonEmpty(extractMetaImage(htmlValue), extractFirstImage(htmlValue)))
 }
 
-func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, feedID int64, articleURL, titleValue string, contentValue sql.NullString) error {
+// applyFilterRules runs the user's filter rules against a freshly stored
+// article. It reports whether the article was deleted by a rule so the caller
+// can avoid counting it as a new article.
+func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, feedID int64, articleURL, titleValue string, contentValue sql.NullString) (bool, error) {
 	rules, err := f.queries.ListFilterRules(ctx, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	title := strings.ToLower(titleValue)
 	urlValue := strings.ToLower(articleURL)
@@ -267,20 +281,20 @@ func (f *FeedFetcher) applyFilterRules(ctx context.Context, userID, articleID, f
 		switch rule.Action {
 		case "star":
 			if err := f.queries.StarArticle(ctx, sqlc.StarArticleParams{IsStarred: 1, ID: articleID, UserID: userID}); err != nil {
-				return err
+				return false, err
 			}
 		case "delete":
 			if err := f.queries.DeleteArticle(ctx, sqlc.DeleteArticleParams{ID: articleID, UserID: userID}); err != nil {
-				return err
+				return false, err
 			}
-			return nil
+			return true, nil
 		default:
 			if err := f.queries.MarkArticleRead(ctx, sqlc.MarkArticleReadParams{IsRead: 1, ID: articleID, UserID: userID}); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
-	return nil
+	return false, nil
 }
 
 func articleFromItem(feedID int64, item *gofeed.Item) (sqlc.CreateArticleParams, bool) {
@@ -460,40 +474,51 @@ func ReadableArticleText(value string) string {
 		"script", "style", "noscript", "iframe", "svg", "nav", "header", "footer", "aside", "form", "button",
 		"[role='navigation']", "[role='banner']", "[role='contentinfo']", "[aria-hidden='true']",
 		"[class*='nav']", "[class*='menu']", "[class*='header']", "[class*='footer']", "[class*='sidebar']",
-		"[class*='newsletter']", "[class*='subscribe']", "[class*='cookie']", "[class*='breadcrumb']",
+		"[class*='newsletter']", "[class*='subscribe']", "[class*='signup']", "[class*='cookie']", "[class*='breadcrumb']",
+		"[class*='promo']", "[class*='related']", "[class*='share']", "[class*='social']",
+		"[class*='hawk']", "[class*='recirc']", "[class*='utility']",
 		"[id*='nav']", "[id*='menu']", "[id*='header']", "[id*='footer']", "[id*='sidebar']",
-		"[id*='newsletter']", "[id*='subscribe']", "[id*='cookie']", "[id*='breadcrumb']",
-	}, ",")).Remove()
+		"[id*='newsletter']", "[id*='subscribe']", "[id*='cookie']", "[id*='breadcrumb']", "[id*='utility']",
+		"[data-mrf-recirculation]", "[data-component-name*='UtilityBar']", "[data-component-name*='Social']",
+		// html/body are excluded: site wrappers often carry classes like
+		// "sticky-navigation" that would otherwise match and delete the whole page.
+	}, ",")).Not("html, body").Remove()
 
-	best := ""
-	bestScore := 0
+	// Selectors run from most specific to most generic; the first one whose text
+	// clears the score threshold wins. This avoids picking a large wrapper (like
+	// <main>) that engulfs site chrome just because it has the most words.
 	for _, selector := range []string{
-		"article [itemprop='articleBody']",
+		"#article-body",
 		"[itemprop='articleBody']",
-		"article",
-		"main article",
-		"main",
-		"[role='main']",
+		"article [itemprop='articleBody']",
 		".article-body",
+		".article__body",
+		".articleBody",
 		".post-content",
 		".entry-content",
+		".article-content",
+		"main article",
+		"article",
+		"[role='main']",
+		"main",
 		".content",
 	} {
+		best := ""
+		bestScore := 0
 		doc.Find(selector).Each(func(_ int, selection *goquery.Selection) {
 			htmlValue, err := selection.Html()
 			if err != nil {
 				return
 			}
 			text := ReadableText(htmlValue)
-			score := readableScore(text)
-			if score > bestScore {
+			if score := readableScore(text); score > bestScore {
 				best = text
 				bestScore = score
 			}
 		})
-	}
-	if bestScore >= 40 {
-		return best
+		if bestScore >= 40 {
+			return best
+		}
 	}
 	bodyHTML, err := doc.Find("body").Html()
 	if err != nil || strings.TrimSpace(bodyHTML) == "" {

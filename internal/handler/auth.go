@@ -13,11 +13,6 @@ import (
 
 const sessionCookieName = "readress_session"
 
-func passwordDigest(password string) string {
-	sum := sha256.Sum256([]byte("readress:" + password))
-	return "sha256:" + base64.RawURLEncoding.EncodeToString(sum[:])
-}
-
 func (a *App) signSession(userID int64, expires int64) string {
 	payload := fmt.Sprintf("%d:%d", userID, expires)
 	mac := hmac.New(sha256.New, a.sessionKey)

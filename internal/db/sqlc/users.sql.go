@@ -49,3 +49,19 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	)
 	return i, err
 }
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = ?
+WHERE id = ?
+`
+
+type UpdateUserPasswordParams struct {
+	PasswordHash string `json:"password_hash"`
+	ID           int64  `json:"id"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}

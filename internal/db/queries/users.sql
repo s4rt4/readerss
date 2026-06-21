@@ -7,3 +7,8 @@ RETURNING id, username, password_hash, created_at;
 SELECT id, username, password_hash, created_at
 FROM users
 WHERE username = ?;
+
+-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = ?
+WHERE id = ?;
