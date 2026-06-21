@@ -26,6 +26,16 @@ ON CONFLICT(username) DO NOTHING
 		return 0, fmt.Errorf("ensure default user: %w", err)
 	}
 
+	// Upgrade the legacy placeholder credential (created before password hashing
+	// existed and previously only usable via a hardcoded backdoor) to a real hash.
+	if _, err := conn.ExecContext(ctx, `
+UPDATE users
+SET password_hash = ?
+WHERE username = ? AND password_hash = 'local-dev-password-placeholder'
+`, passwordHash, DefaultUsername); err != nil {
+		return 0, fmt.Errorf("upgrade placeholder password: %w", err)
+	}
+
 	var userID int64
 	if err := conn.QueryRowContext(ctx, `SELECT id FROM users WHERE username = ?`, DefaultUsername).Scan(&userID); err != nil {
 		return 0, fmt.Errorf("load default user: %w", err)
