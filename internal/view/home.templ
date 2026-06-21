@@ -19,6 +19,9 @@ templ Home(data HomeData) {
 						</a>
 						<p class="eyebrow">Local Reader</p>
 					</div>
+					<button class="icon-button subtle sidebar-collapse-toggle" type="button" data-toggle-collapse aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded="true">
+						@IconPanelsTopLeft()
+					</button>
 					<button class="icon-button sidebar-close" type="button" data-close-sidebar aria-label="Close sidebar" title="Close sidebar">
 						@IconX()
 					</button>
@@ -269,6 +272,7 @@ templ Home(data HomeData) {
 							}
 						</ul>
 					</div>
+					<div class="pane-resizer" data-pane-resizer role="separator" aria-orientation="vertical" aria-label="Resize reading area" title="Drag to resize · double-click to reset"></div>
 					<article class="detail-pane" data-detail-pane data-mobile-detail>
 						<div class="article-toolbar">
 							<div class="article-source">

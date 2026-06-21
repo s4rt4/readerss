@@ -199,6 +199,125 @@
 
   document.querySelector("[data-open-sidebar]")?.addEventListener("click", openSidebar);
   document.querySelectorAll("[data-close-sidebar]").forEach((item) => item.addEventListener("click", closeSidebar));
+
+  setupSidebarCollapse();
+  setupPaneResizer();
+
+  function setupPaneResizer() {
+    const grid = document.querySelector(".content-grid");
+    const resizer = document.querySelector("[data-pane-resizer]");
+    if (!grid || !resizer) {
+      return;
+    }
+    const storageKey = "readress-list-width";
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      grid.style.setProperty("--reader-list-width", saved);
+    }
+
+    let dragging = false;
+    const onMove = (event) => {
+      if (!dragging) {
+        return;
+      }
+      const rect = grid.getBoundingClientRect();
+      const min = 280;
+      const max = rect.width - 380;
+      let width = event.clientX - rect.left;
+      width = Math.max(min, Math.min(max, width));
+      grid.style.setProperty("--reader-list-width", Math.round(width) + "px");
+    };
+    const stop = () => {
+      if (!dragging) {
+        return;
+      }
+      dragging = false;
+      resizer.classList.remove("is-dragging");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      const width = grid.style.getPropertyValue("--reader-list-width");
+      if (width) {
+        localStorage.setItem(storageKey, width.trim());
+      }
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", stop);
+    };
+    resizer.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      dragging = true;
+      resizer.classList.add("is-dragging");
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "col-resize";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", stop);
+    });
+    resizer.addEventListener("dblclick", () => {
+      grid.style.removeProperty("--reader-list-width");
+      localStorage.removeItem(storageKey);
+    });
+  }
+
+  function setupSidebarCollapse() {
+    const toggle = document.querySelector("[data-toggle-collapse]");
+    const applyCollapsed = (collapsed) => {
+      shell?.classList.toggle("sidebar-collapsed", collapsed);
+      if (toggle) {
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+        toggle.setAttribute("aria-label", label);
+        toggle.setAttribute("title", label);
+      }
+    };
+    applyCollapsed(localStorage.getItem("readress-sidebar-collapsed") === "1");
+    toggle?.addEventListener("click", () => {
+      const collapsed = !shell?.classList.contains("sidebar-collapsed");
+      localStorage.setItem("readress-sidebar-collapsed", collapsed ? "1" : "0");
+      applyCollapsed(collapsed);
+      hideSidebarTooltip();
+    });
+
+    let tooltip = null;
+    const sidebar = document.querySelector("[data-sidebar]");
+    const tipText = (el) => {
+      if (el.classList.contains("feed-link")) {
+        return el.querySelector("strong")?.textContent.trim() || "";
+      }
+      const label = Array.from(el.children).find(
+        (child) => child.tagName === "SPAN" && child.textContent.trim()
+      );
+      return label ? label.textContent.trim() : "";
+    };
+    const showSidebarTooltip = (el) => {
+      if (!shell?.classList.contains("sidebar-collapsed")) {
+        return;
+      }
+      const text = tipText(el);
+      if (!text) {
+        return;
+      }
+      if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.className = "sidebar-tooltip";
+        document.body.appendChild(tooltip);
+      }
+      tooltip.textContent = text;
+      tooltip.hidden = false;
+      const rect = el.getBoundingClientRect();
+      tooltip.style.top = rect.top + rect.height / 2 + "px";
+      tooltip.style.left = rect.right + 8 + "px";
+    };
+    function hideSidebarTooltip() {
+      if (tooltip) {
+        tooltip.hidden = true;
+      }
+    }
+
+    document.querySelectorAll("[data-sidebar] .nav-item, [data-sidebar] .feed-link").forEach((el) => {
+      el.addEventListener("mouseenter", () => showSidebarTooltip(el));
+      el.addEventListener("mouseleave", hideSidebarTooltip);
+    });
+    sidebar?.addEventListener("scroll", hideSidebarTooltip, { passive: true });
+  }
   document.querySelector("[data-close-detail]")?.addEventListener("click", function () {
     reader?.classList.remove("detail-open");
   });

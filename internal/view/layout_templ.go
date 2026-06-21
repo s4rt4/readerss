@@ -42,7 +42,7 @@ func Layout(title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"icon\" href=\"/static/img/readerss.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/img/readerss_favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/img/readerss_favicon.svg\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"stylesheet\" href=\"/static/css/app.css?v=20260621-select-arrow\"><script defer src=\"/static/js/htmx.min.js?v=20260621-select-arrow\"></script><script defer src=\"/static/js/app.js?v=20260621-select-arrow\"></script></head><body>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"icon\" href=\"/static/img/readerss.ico\" sizes=\"any\"><link rel=\"icon\" href=\"/static/img/readerss_favicon.svg\" type=\"image/svg+xml\"><link rel=\"apple-touch-icon\" href=\"/static/img/readerss_favicon.svg\"><link rel=\"manifest\" href=\"/static/site.webmanifest\"><link rel=\"stylesheet\" href=\"/static/css/app.css?v=20260621-pane-resizer\"><script defer src=\"/static/js/htmx.min.js?v=20260621-pane-resizer\"></script><script defer src=\"/static/js/app.js?v=20260621-pane-resizer\"></script></head><body>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
